@@ -1,0 +1,54 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: .
+    binary: calvin
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/andrew8088/calvin/internal/cli.appVersion={{.Version}}
+      - -X github.com/andrew8088/calvin/internal/cli.appCommit={{.ShortCommit}}
+      - -X github.com/andrew8088/calvin/internal/auth.embeddedClientID={{ .Env.CALVIN_OAUTH_CLIENT_ID }}
+      - -X github.com/andrew8088/calvin/internal/auth.embeddedClientSecret={{ .Env.CALVIN_OAUTH_CLIENT_SECRET }}
+
+archives:
+  - formats: ['tar.gz']
+    name_template: "calvin_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+brews:
+  - repository:
+      owner: andrew8088
+      name: homebrew-tap
+    name: calvin
+    homepage: "https://github.com/andrew8088/calvin"
+    description: "Programmable calendar hooks for your Mac"
+    license: "MIT"
+    install: |
+      bin.install "calvin"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^ci:"
+
+release:
+  github:
+    owner: andrew8088
+    name: calvin
