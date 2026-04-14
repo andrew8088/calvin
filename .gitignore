@@ -6,3 +6,4 @@ calvin
 token.json
 .env
 dist/
+.gstack/
