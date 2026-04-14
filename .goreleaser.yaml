@@ -26,16 +26,15 @@ archives:
   - formats: ['tar.gz']
     name_template: "calvin_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
-brews:
+homebrew_casks:
   - repository:
       owner: andrew8088
       name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     name: calvin
     homepage: "https://github.com/andrew8088/calvin"
     description: "Programmable calendar hooks for your Mac"
     license: "MIT"
-    install: |
-      bin.install "calvin"
 
 checksum:
   name_template: "checksums.txt"

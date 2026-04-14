@@ -28,3 +28,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CALVIN_OAUTH_CLIENT_ID: ${{ secrets.CALVIN_OAUTH_CLIENT_ID }}
           CALVIN_OAUTH_CLIENT_SECRET: ${{ secrets.CALVIN_OAUTH_CLIENT_SECRET }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
