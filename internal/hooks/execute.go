@@ -22,6 +22,7 @@ type Executor struct {
 	cfg       *config.Config
 	database  *db.DB
 	semaphore chan struct{}
+	dbmu      sync.Mutex
 }
 
 func NewExecutor(cfg *config.Config, database *db.DB) *Executor {
@@ -97,7 +98,9 @@ func (e *Executor) executeOne(ctx context.Context, hook Hook, hookType, eventID 
 		}
 	}
 
+	e.dbmu.Lock()
 	executed, err := e.database.HasHookExecuted(eventID, hook.Name, hookType)
+	e.dbmu.Unlock()
 	if err != nil {
 		log.Error("hooks", fmt.Sprintf("dedup check failed for %s: %v", hook.Name, err))
 	}
@@ -120,6 +123,10 @@ func (e *Executor) executeOne(ctx context.Context, hook Hook, hookType, eventID 
 	cmd.Dir = config.ConfigDir()
 	cmd.Env = buildEnv(eventID, hookType)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = 3 * time.Second
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &limitedWriter{buf: &stdoutBuf, max: e.cfg.HookOutputMaxBytes}
@@ -149,9 +156,6 @@ func (e *Executor) executeOne(ctx context.Context, hook Hook, hookType, eventID 
 	result.Stderr = stderr
 
 	if ctx.Err() != nil {
-		if cmd.Process != nil {
-			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		}
 		result.Status = "timeout"
 		result.Err = fmt.Errorf("hook timed out after %s", timeout)
 		log.HookEvent(logging.LevelWarn, hook.Name, hookType, eventID, "timeout",
@@ -167,7 +171,10 @@ func (e *Executor) executeOne(ctx context.Context, hook Hook, hookType, eventID 
 			fmt.Sprintf("Hook completed in %dms", durationMs), durationMs)
 	}
 
-	if dbErr := e.database.RecordHookExecution(eventID, hook.Name, hookType, result.Status, result.Stdout, result.Stderr, durationMs); dbErr != nil {
+	e.dbmu.Lock()
+	dbErr := e.database.RecordHookExecution(eventID, hook.Name, hookType, result.Status, result.Stdout, result.Stderr, durationMs)
+	e.dbmu.Unlock()
+	if dbErr != nil {
 		log.Error("hooks", fmt.Sprintf("failed to record hook execution: %v", dbErr))
 	}
 

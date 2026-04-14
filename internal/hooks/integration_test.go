@@ -148,7 +148,7 @@ func TestFireHooks_ReceivesStdin(t *testing.T) {
 	}
 }
 
-func TestFireHooks_MultipleHooks(t *testing.T) {
+func TestFireHooks_Concurrent(t *testing.T) {
 	logging.InitStdout()
 	d := openTestDB(t)
 	dir := t.TempDir()
@@ -160,7 +160,7 @@ func TestFireHooks_MultipleHooks(t *testing.T) {
 	}
 
 	cfg := testCfg()
-	cfg.MaxConcurrentHooks = 1
+	cfg.MaxConcurrentHooks = 4
 	executor := NewExecutor(cfg, d)
 
 	results := executor.FireHooks(context.Background(), testEvent(), "pre_event", hks, nil, nil)
