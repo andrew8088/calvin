@@ -178,6 +178,10 @@ Calvin follows the XDG Base Directory Specification:
 | Logs    | `~/.local/state/calvin/calvin.log` |
 | DB      | `~/.local/share/calvin/events.db` |
 
+## Privacy
+
+Calvin requests read-only access to your calendar. All data stays on your machine. Read the full [privacy policy](PRIVACY).
+
 ## License
 
-MIT
+[MIT](LICENSE)
