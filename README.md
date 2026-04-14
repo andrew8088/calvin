@@ -10,11 +10,8 @@ Drop scripts in your hooks directory, and Calvin handles the rest.
 # Homebrew
 brew install andrew8088/tap/calvin
 
-# Or download binary
-curl -fsSL https://github.com/andrew8088/calvin/releases/latest/download/install.sh | bash
-
-# Or build from source
-go install github.com/andrew8088/calvin@latest
+# Or download from GitHub Releases
+# https://github.com/andrew8088/calvin/releases/latest
 ```
 
 ## Quick start
