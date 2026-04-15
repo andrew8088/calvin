@@ -14,7 +14,7 @@ import (
 var hooksCmd = &cobra.Command{
 	Use:   "hooks",
 	Short: "Manage Calvin hooks",
-	Example: "  calvin hooks list\n  calvin hooks new pre_event my-hook\n  calvin hooks schema",
+	Example: "  calvin hooks list\n  calvin hooks new before-event-start my-hook\n  calvin hooks schema",
 }
 
 var hooksListCmd = &cobra.Command{
@@ -29,7 +29,7 @@ var hooksNewCmd = &cobra.Command{
 	Use:   "new <type> <name>",
 	Short: "Create a new hook from template",
 	Args:  cobra.ExactArgs(2),
-	Example: "  calvin hooks new pre_event my-notifier\n  calvin hooks new event_start open-zoom",
+	Example: "  calvin hooks new before-event-start my-notifier\n  calvin hooks new on-event-start open-zoom",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runHooksNew(args[0], args[1])
 	},
@@ -63,7 +63,7 @@ func runHooksList() error {
 	if total == 0 {
 		fmt.Println("  No hooks found.")
 		fmt.Printf("  Hooks directory: %s\n", dim(config.HooksDir()))
-		fmt.Printf("  Create one: %s\n", cyan("calvin hooks new pre_event my-hook"))
+		fmt.Printf("  Create one: %s\n", cyan("calvin hooks new before-event-start my-hook"))
 		return nil
 	}
 
@@ -160,7 +160,7 @@ func runHooksSchema() error {
 		"organizer":  "alice@example.com",
 		"calendar":   "primary",
 		"status":     "confirmed",
-		"hook_type":  "pre_event",
+		"hook_type":  "before-event-start",
 		"previous_event": map[string]string{
 			"id": "prev123", "title": "Morning coffee", "start": "2024-01-15T09:00:00-08:00",
 			"end": "2024-01-15T09:30:00-08:00", "meeting_link": "",
@@ -184,7 +184,7 @@ func runHooksSchema() error {
 	fmt.Println("  Fields:")
 	fmt.Printf("    schema_version   %s\n", dim("always 1 (will increment on breaking changes)"))
 	fmt.Printf("    meeting_link     %s\n", dim("null when no meeting link exists"))
-	fmt.Printf("    hook_type        %s\n", dim("pre_event | event_start | event_end"))
+	fmt.Printf("    hook_type        %s\n", dim("before-event-start | on-event-start | on-event-end"))
 	fmt.Printf("    previous_event   %s\n", dim("null if this is the first event"))
 	fmt.Printf("    next_event       %s\n", dim("null if this is the last event"))
 	fmt.Println()

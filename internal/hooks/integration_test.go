@@ -35,7 +35,7 @@ func writeScript(t *testing.T, dir, name, content string) Hook {
 	t.Helper()
 	path := filepath.Join(dir, name)
 	os.WriteFile(path, []byte(content), 0755)
-	return Hook{Name: name, Type: "pre_event", Path: path}
+	return Hook{Name: name, Type: "before-event-start", Path: path}
 }
 
 func testCfg() *config.Config {
@@ -64,7 +64,7 @@ func TestFireHooks_Success(t *testing.T) {
 	hook := writeScript(t, dir, "echo-hook", "#!/bin/sh\necho hello")
 	executor := NewExecutor(testCfg(), d)
 
-	results := executor.FireHooks(context.Background(), testEvent(), "pre_event", []Hook{hook}, nil, nil)
+	results := executor.FireHooks(context.Background(), testEvent(), "before-event-start", []Hook{hook}, nil, nil)
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
@@ -89,7 +89,7 @@ func TestFireHooks_Failure(t *testing.T) {
 	hook := writeScript(t, dir, "fail-hook", "#!/bin/sh\necho oops >&2\nexit 1")
 	executor := NewExecutor(testCfg(), d)
 
-	results := executor.FireHooks(context.Background(), testEvent(), "pre_event", []Hook{hook}, nil, nil)
+	results := executor.FireHooks(context.Background(), testEvent(), "before-event-start", []Hook{hook}, nil, nil)
 
 	if results[0].Status != "failed" {
 		t.Errorf("status = %q, want 'failed'", results[0].Status)
@@ -114,7 +114,7 @@ func TestFireHooks_Timeout(t *testing.T) {
 	hook := writeScript(t, dir, "slow-hook", "#!/bin/sh\nwhile true; do :; done")
 	executor := NewExecutor(cfg, d)
 
-	results := executor.FireHooks(context.Background(), testEvent(), "pre_event", []Hook{hook}, nil, nil)
+	results := executor.FireHooks(context.Background(), testEvent(), "before-event-start", []Hook{hook}, nil, nil)
 
 	if results[0].Status != "timeout" {
 		t.Errorf("status = %q, want 'timeout'", results[0].Status)
@@ -131,12 +131,12 @@ func TestFireHooks_Dedup(t *testing.T) {
 	executor := NewExecutor(testCfg(), d)
 	event := testEvent()
 
-	results := executor.FireHooks(context.Background(), event, "pre_event", []Hook{hook}, nil, nil)
+	results := executor.FireHooks(context.Background(), event, "before-event-start", []Hook{hook}, nil, nil)
 	if results[0].Status != "success" {
 		t.Fatalf("first run: status = %q", results[0].Status)
 	}
 
-	results = executor.FireHooks(context.Background(), event, "pre_event", []Hook{hook}, nil, nil)
+	results = executor.FireHooks(context.Background(), event, "before-event-start", []Hook{hook}, nil, nil)
 	if results[0].Status != "skipped" {
 		t.Errorf("second run: status = %q, want 'skipped'", results[0].Status)
 	}
@@ -151,7 +151,7 @@ func TestFireHooks_ReceivesStdin(t *testing.T) {
 	hook := writeScript(t, dir, "stdin-hook", "#!/bin/sh\ncat")
 	executor := NewExecutor(testCfg(), d)
 
-	results := executor.FireHooks(context.Background(), testEvent(), "pre_event", []Hook{hook}, nil, nil)
+	results := executor.FireHooks(context.Background(), testEvent(), "before-event-start", []Hook{hook}, nil, nil)
 
 	if results[0].Status != "success" {
 		t.Fatalf("status = %q, stderr = %q", results[0].Status, results[0].Stderr)
@@ -177,7 +177,7 @@ func TestFireHooks_Concurrent(t *testing.T) {
 	cfg.MaxConcurrentHooks = 4
 	executor := NewExecutor(cfg, d)
 
-	results := executor.FireHooks(context.Background(), testEvent(), "pre_event", hks, nil, nil)
+	results := executor.FireHooks(context.Background(), testEvent(), "before-event-start", hks, nil, nil)
 
 	successCount := 0
 	for _, r := range results {
@@ -199,7 +199,7 @@ func TestFireHooks_RecordsExecution(t *testing.T) {
 	hook := writeScript(t, dir, "record-hook", "#!/bin/sh\necho recorded")
 	executor := NewExecutor(testCfg(), d)
 
-	executor.FireHooks(context.Background(), testEvent(), "pre_event", []Hook{hook}, nil, nil)
+	executor.FireHooks(context.Background(), testEvent(), "before-event-start", []Hook{hook}, nil, nil)
 
 	execs, err := d.GetHookExecutions("evt-1")
 	if err != nil {

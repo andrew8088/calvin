@@ -112,21 +112,21 @@ func (s *Scheduler) scheduleEvent(ctx context.Context, event calendar.Event, now
 	if preEventTime.After(now) {
 		delay := preEventTime.Sub(now)
 		et.PreEvent = time.AfterFunc(delay, func() {
-			s.fireHook(ctx, event, "pre_event")
+			s.fireHook(ctx, event, "before-event-start")
 		})
 	}
 
 	if event.Start.After(now) {
 		delay := event.Start.Sub(now)
 		et.EventStart = time.AfterFunc(delay, func() {
-			s.fireHook(ctx, event, "event_start")
+			s.fireHook(ctx, event, "on-event-start")
 		})
 	}
 
 	if event.End.After(now) {
 		delay := event.End.Sub(now)
 		et.EventEnd = time.AfterFunc(delay, func() {
-			s.fireHook(ctx, event, "event_end")
+			s.fireHook(ctx, event, "on-event-end")
 		})
 	}
 }
@@ -137,11 +137,11 @@ func (s *Scheduler) fireHook(ctx context.Context, event calendar.Event, hookType
 	fireTime := time.Now()
 	var scheduledTime time.Time
 	switch hookType {
-	case "pre_event":
+	case "before-event-start":
 		scheduledTime = event.Start.Add(-time.Duration(s.cfg.PreEventMinutes) * time.Minute)
-	case "event_start":
+	case "on-event-start":
 		scheduledTime = event.Start
-	case "event_end":
+	case "on-event-end":
 		scheduledTime = event.End
 	}
 

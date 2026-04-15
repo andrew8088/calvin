@@ -81,7 +81,7 @@ func TestLimitedWriter_ZeroMax(t *testing.T) {
 }
 
 func TestBuildEnv_ContainsCalvinVars(t *testing.T) {
-	env := buildEnv("evt-1", "pre_event")
+	env := buildEnv("evt-1", "before-event-start")
 
 	found := map[string]bool{}
 	for _, e := range env {
@@ -99,7 +99,7 @@ func TestBuildEnv_ContainsCalvinVars(t *testing.T) {
 }
 
 func TestBuildEnv_EventIDValue(t *testing.T) {
-	env := buildEnv("my-event", "event_start")
+	env := buildEnv("my-event", "on-event-start")
 
 	for _, e := range env {
 		if e == "CALVIN_EVENT_ID=my-event" {
@@ -110,7 +110,7 @@ func TestBuildEnv_EventIDValue(t *testing.T) {
 }
 
 func TestBuildEnv_PathIncludes(t *testing.T) {
-	env := buildEnv("evt-1", "pre_event")
+	env := buildEnv("evt-1", "before-event-start")
 
 	for _, e := range env {
 		if strings.HasPrefix(e, "PATH=") {
@@ -128,7 +128,7 @@ func TestBuildEnv_PathIncludes(t *testing.T) {
 }
 
 func TestBuildEnv_ConfigDirValue(t *testing.T) {
-	env := buildEnv("evt-1", "pre_event")
+	env := buildEnv("evt-1", "before-event-start")
 	expected := "CALVIN_CONFIG_DIR=" + config.ConfigDir()
 
 	for _, e := range env {

@@ -81,7 +81,7 @@ func runInit() error {
 	fmt.Printf("    %s\n", cyan("calvin test example-notify"))
 	fmt.Println()
 	fmt.Println("  Or create your own:")
-	fmt.Printf("    %s\n", cyan("calvin hooks new pre_event my-hook"))
+	fmt.Printf("    %s\n", cyan("calvin hooks new before-event-start my-hook"))
 	fmt.Println()
 	fmt.Println("  When ready:")
 	fmt.Printf("    %s\n", cyan("calvin start --background"))
@@ -114,11 +114,11 @@ hook_execution_retention_days = 30
 `
 
 var exampleHooks = map[string]string{
-	"pre_event/example-notify": `#!/usr/bin/env bash
+	"before-event-start/example-notify": `#!/usr/bin/env bash
 # Example Calvin hook: desktop notification before meetings
 # This hook receives event JSON on stdin. Use jq to extract fields.
 #
-# Hook type: pre_event (fires before the event starts)
+# Hook type: before-event-start (fires before the event starts)
 # Run: calvin hooks schema  to see all available JSON fields
 
 INPUT=$(cat /dev/stdin)
@@ -135,9 +135,9 @@ fi
 osascript -e "display notification \"$MSG\" with title \"Calvin\""
 echo "Notified: $TITLE at $START"
 `,
-	"event_start/example-open-link": `#!/usr/bin/env bash
+	"on-event-start/example-open-link": `#!/usr/bin/env bash
 # Example Calvin hook: auto-open meeting links when events start
-# Hook type: event_start (fires when the event begins)
+# Hook type: on-event-start (fires when the event begins)
 
 INPUT=$(cat /dev/stdin)
 LINK=$(echo "$INPUT" | jq -r '.meeting_link // empty')
@@ -150,9 +150,9 @@ else
   echo "No meeting link for: $TITLE"
 fi
 `,
-	"event_end/example-log": `#!/usr/bin/env bash
+	"on-event-end/example-log": `#!/usr/bin/env bash
 # Example Calvin hook: log when meetings end
-# Hook type: event_end (fires when the event ends)
+# Hook type: on-event-end (fires when the event ends)
 
 INPUT=$(cat /dev/stdin)
 TITLE=$(echo "$INPUT" | jq -r '.title')

@@ -16,7 +16,7 @@ type Hook struct {
 	Path string
 }
 
-var ValidTypes = []string{"pre_event", "event_start", "event_end"}
+var ValidTypes = []string{"before-event-start", "on-event-start", "on-event-end"}
 
 func Discover() (map[string][]Hook, error) {
 	return DiscoverFrom(config.HooksDir())

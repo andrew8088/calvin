@@ -63,7 +63,7 @@ func TestLog_Levels(t *testing.T) {
 
 func TestHookEvent(t *testing.T) {
 	l, buf := newTestLogger()
-	l.HookEvent(LevelInfo, "my-hook", "pre_event", "evt-1", "success", "completed", 150)
+	l.HookEvent(LevelInfo, "my-hook", "before-event-start", "evt-1", "success", "completed", 150)
 
 	var entry Entry
 	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
@@ -76,7 +76,7 @@ func TestHookEvent(t *testing.T) {
 	if entry.HookName != "my-hook" {
 		t.Errorf("hook_name = %q", entry.HookName)
 	}
-	if entry.HookType != "pre_event" {
+	if entry.HookType != "before-event-start" {
 		t.Errorf("hook_type = %q", entry.HookType)
 	}
 	if entry.EventID != "evt-1" {

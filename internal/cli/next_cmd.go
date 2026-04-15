@@ -92,7 +92,7 @@ func runNext() error {
 
 	allHooks, _ := hooks.Discover()
 	hookNames := []string{}
-	for _, t := range []string{"pre_event", "event_start", "event_end"} {
+	for _, t := range []string{"before-event-start", "on-event-start", "on-event-end"} {
 		for _, h := range allHooks[t] {
 			hookNames = append(hookNames, t+"/"+h.Name)
 		}

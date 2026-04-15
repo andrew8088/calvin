@@ -195,7 +195,7 @@ func TestEventToPayload_Basic(t *testing.T) {
 		Attendees:       []Attendee{{Email: "a@b.com", Name: "Alice", Response: "accepted"}},
 	}
 
-	p := EventToPayload(e, "event_start", nil, nil)
+	p := EventToPayload(e, "on-event-start", nil, nil)
 
 	if p.SchemaVersion != 1 {
 		t.Errorf("expected schema version 1, got %d", p.SchemaVersion)
@@ -203,8 +203,8 @@ func TestEventToPayload_Basic(t *testing.T) {
 	if p.ID != "evt-1" {
 		t.Errorf("expected ID 'evt-1', got %q", p.ID)
 	}
-	if p.HookType != "event_start" {
-		t.Errorf("expected hook type 'event_start', got %q", p.HookType)
+	if p.HookType != "on-event-start" {
+		t.Errorf("expected hook type 'on-event-start', got %q", p.HookType)
 	}
 	if p.MeetingLink == nil || *p.MeetingLink != "https://meet.google.com/abc" {
 		t.Error("expected meeting link to be set")
@@ -222,7 +222,7 @@ func TestEventToPayload_Basic(t *testing.T) {
 
 func TestEventToPayload_NoMeetingLink(t *testing.T) {
 	e := Event{ID: "1", Start: time.Now(), End: time.Now().Add(time.Hour)}
-	p := EventToPayload(e, "pre_event", nil, nil)
+	p := EventToPayload(e, "before-event-start", nil, nil)
 
 	if p.MeetingLink != nil {
 		t.Error("expected nil meeting link for empty string")
@@ -235,7 +235,7 @@ func TestEventToPayload_WithAdjacent(t *testing.T) {
 	prev := &Event{ID: "1", Title: "Prev", Start: now.Add(-time.Hour), End: now, MeetingLink: "https://zoom.us/j/123"}
 	next := &Event{ID: "3", Title: "Next", Start: now.Add(time.Hour), End: now.Add(2 * time.Hour)}
 
-	p := EventToPayload(e, "event_start", prev, next)
+	p := EventToPayload(e, "on-event-start", prev, next)
 
 	if p.PreviousEvent == nil {
 		t.Fatal("expected PreviousEvent")

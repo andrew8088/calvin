@@ -279,7 +279,7 @@ func printBanner(cfg *config.Config, database *db.DB) {
 
 	hookLine := "  Hooks:   "
 	parts := []string{}
-	for _, t := range []string{"pre_event", "event_start", "event_end"} {
+	for _, t := range []string{"before-event-start", "on-event-start", "on-event-end"} {
 		if c, ok := hookCounts[t]; ok && c > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", c, t))
 		}

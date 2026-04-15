@@ -42,9 +42,9 @@ func TestDiscoverFrom_Empty(t *testing.T) {
 
 func TestDiscoverFrom_FindsHooks(t *testing.T) {
 	base := setupHooksDir(t)
-	createHook(t, base, "pre_event", "notify")
-	createHook(t, base, "event_start", "open-link")
-	createHook(t, base, "event_end", "clear-status")
+	createHook(t, base, "before-event-start", "notify")
+	createHook(t, base, "on-event-start", "open-link")
+	createHook(t, base, "on-event-end", "clear-status")
 
 	result, err := DiscoverFrom(base)
 	if err != nil {
@@ -53,54 +53,54 @@ func TestDiscoverFrom_FindsHooks(t *testing.T) {
 	if len(result) != 3 {
 		t.Fatalf("expected 3 hook types, got %d", len(result))
 	}
-	if len(result["pre_event"]) != 1 {
-		t.Errorf("expected 1 pre_event hook, got %d", len(result["pre_event"]))
+	if len(result["before-event-start"]) != 1 {
+		t.Errorf("expected 1 before-event-start hook, got %d", len(result["before-event-start"]))
 	}
-	if result["pre_event"][0].Name != "notify" {
-		t.Errorf("hook name = %q, want 'notify'", result["pre_event"][0].Name)
+	if result["before-event-start"][0].Name != "notify" {
+		t.Errorf("hook name = %q, want 'notify'", result["before-event-start"][0].Name)
 	}
 }
 
 func TestDiscoverFrom_SkipsNonExecutable(t *testing.T) {
 	base := setupHooksDir(t)
 
-	path := filepath.Join(base, "pre_event", "not-executable")
+	path := filepath.Join(base, "before-event-start", "not-executable")
 	os.WriteFile(path, []byte("#!/bin/sh\necho ok"), 0644)
 
 	result, _ := DiscoverFrom(base)
-	if len(result["pre_event"]) != 0 {
+	if len(result["before-event-start"]) != 0 {
 		t.Error("non-executable files should be skipped")
 	}
 }
 
 func TestDiscoverFrom_SkipsDotfiles(t *testing.T) {
 	base := setupHooksDir(t)
-	createHook(t, base, "pre_event", ".hidden")
+	createHook(t, base, "before-event-start", ".hidden")
 
 	result, _ := DiscoverFrom(base)
-	if len(result["pre_event"]) != 0 {
+	if len(result["before-event-start"]) != 0 {
 		t.Error("dotfiles should be skipped")
 	}
 }
 
 func TestDiscoverFrom_SkipsDirectories(t *testing.T) {
 	base := setupHooksDir(t)
-	os.MkdirAll(filepath.Join(base, "pre_event", "subdir"), 0755)
+	os.MkdirAll(filepath.Join(base, "before-event-start", "subdir"), 0755)
 
 	result, _ := DiscoverFrom(base)
-	if len(result["pre_event"]) != 0 {
+	if len(result["before-event-start"]) != 0 {
 		t.Error("directories should be skipped")
 	}
 }
 
 func TestDiscoverFrom_SortedAlphabetically(t *testing.T) {
 	base := setupHooksDir(t)
-	createHook(t, base, "pre_event", "z-last")
-	createHook(t, base, "pre_event", "a-first")
-	createHook(t, base, "pre_event", "m-middle")
+	createHook(t, base, "before-event-start", "z-last")
+	createHook(t, base, "before-event-start", "a-first")
+	createHook(t, base, "before-event-start", "m-middle")
 
 	result, _ := DiscoverFrom(base)
-	hooks := result["pre_event"]
+	hooks := result["before-event-start"]
 	if len(hooks) != 3 {
 		t.Fatalf("expected 3 hooks, got %d", len(hooks))
 	}
@@ -123,22 +123,22 @@ func TestDiscoverFrom_MissingTypeDir(t *testing.T) {
 
 func TestDiscoverFrom_HookPath(t *testing.T) {
 	base := setupHooksDir(t)
-	createHook(t, base, "event_start", "my-hook")
+	createHook(t, base, "on-event-start", "my-hook")
 
 	result, _ := DiscoverFrom(base)
-	hook := result["event_start"][0]
+	hook := result["on-event-start"][0]
 
-	expected := filepath.Join(base, "event_start", "my-hook")
+	expected := filepath.Join(base, "on-event-start", "my-hook")
 	if hook.Path != expected {
 		t.Errorf("Path = %q, want %q", hook.Path, expected)
 	}
-	if hook.Type != "event_start" {
-		t.Errorf("Type = %q, want 'event_start'", hook.Type)
+	if hook.Type != "on-event-start" {
+		t.Errorf("Type = %q, want 'on-event-start'", hook.Type)
 	}
 }
 
 func TestValidTypes(t *testing.T) {
-	expected := map[string]bool{"pre_event": true, "event_start": true, "event_end": true}
+	expected := map[string]bool{"before-event-start": true, "on-event-start": true, "on-event-end": true}
 	for _, vt := range ValidTypes {
 		if !expected[vt] {
 			t.Errorf("unexpected valid type: %q", vt)

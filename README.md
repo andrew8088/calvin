@@ -33,9 +33,9 @@ Three hook types:
 
 | Hook Type     | When it fires                        |
 |---------------|--------------------------------------|
-| `pre_event`   | N minutes before the event starts    |
-| `event_start` | When the event starts                |
-| `event_end`   | When the event ends                  |
+| `before-event-start`   | N minutes before the event starts    |
+| `on-event-start` | When the event starts                |
+| `on-event-end`   | When the event ends                  |
 
 Hooks receive event data as JSON on stdin:
 
@@ -75,10 +75,10 @@ Add `--json` to `events`, `next`, or `status` for machine-readable output.
 ## Creating hooks
 
 ```bash
-calvin hooks new pre_event my-notifier
+calvin hooks new before-event-start my-notifier
 ```
 
-This creates a hook at `~/.config/calvin/hooks/pre_event/my-notifier` with a starter template. Edit it, and Calvin picks it up on the next sync cycle (no restart needed).
+This creates a hook at `~/.config/calvin/hooks/before-event-start/my-notifier` with a starter template. Edit it, and Calvin picks it up on the next sync cycle (no restart needed).
 
 Hooks must be executable (`chmod +x`). Calvin discovers hooks by scanning the hooks directory every sync cycle.
 
@@ -132,7 +132,7 @@ echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $TITLE ($START - $END)" >> ~/meeting-log.tx
 
 ```bash
 #!/usr/bin/env bash
-# pre_event: enable DND
+# before-event-start: enable DND
 shortcuts run "Turn On Focus"
 ```
 

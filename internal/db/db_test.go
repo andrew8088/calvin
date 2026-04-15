@@ -237,22 +237,22 @@ func TestDeleteStaleSyncGeneration(t *testing.T) {
 func TestHookExecution(t *testing.T) {
 	d := openTestDB(t)
 
-	err := d.RecordHookExecution("evt-1", "notify", "pre_event", "success", "out", "err", 150)
+	err := d.RecordHookExecution("evt-1", "notify", "before-event-start", "success", "out", "err", 150)
 	if err != nil {
 		t.Fatalf("RecordHookExecution: %v", err)
 	}
 
-	executed, _ := d.HasHookExecuted("evt-1", "notify", "pre_event")
+	executed, _ := d.HasHookExecuted("evt-1", "notify", "before-event-start")
 	if !executed {
 		t.Error("expected hook to show as executed")
 	}
 
-	executed, _ = d.HasHookExecuted("evt-1", "notify", "event_start")
+	executed, _ = d.HasHookExecuted("evt-1", "notify", "on-event-start")
 	if executed {
 		t.Error("different hook type should not match")
 	}
 
-	executed, _ = d.HasHookExecuted("evt-2", "notify", "pre_event")
+	executed, _ = d.HasHookExecuted("evt-2", "notify", "before-event-start")
 	if executed {
 		t.Error("different event should not match")
 	}
@@ -261,9 +261,9 @@ func TestHookExecution(t *testing.T) {
 func TestHookExecution_FailedNotDeduped(t *testing.T) {
 	d := openTestDB(t)
 
-	d.RecordHookExecution("evt-1", "notify", "pre_event", "failed", "", "error", 50)
+	d.RecordHookExecution("evt-1", "notify", "before-event-start", "failed", "", "error", 50)
 
-	executed, _ := d.HasHookExecuted("evt-1", "notify", "pre_event")
+	executed, _ := d.HasHookExecuted("evt-1", "notify", "before-event-start")
 	if executed {
 		t.Error("failed executions should not count as dedup")
 	}
@@ -272,8 +272,8 @@ func TestHookExecution_FailedNotDeduped(t *testing.T) {
 func TestGetHookExecutions(t *testing.T) {
 	d := openTestDB(t)
 
-	d.RecordHookExecution("evt-1", "notify", "pre_event", "success", "hello", "", 100)
-	d.RecordHookExecution("evt-1", "slack", "event_start", "failed", "", "boom", 50)
+	d.RecordHookExecution("evt-1", "notify", "before-event-start", "success", "hello", "", 100)
+	d.RecordHookExecution("evt-1", "slack", "on-event-start", "failed", "", "boom", 50)
 
 	execs, err := d.GetHookExecutions("evt-1")
 	if err != nil {

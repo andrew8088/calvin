@@ -117,7 +117,7 @@ func runDoctor() error {
 			total += len(list)
 		}
 		if total == 0 {
-			return fmt.Errorf("no hooks found. Fix: calvin hooks new pre_event my-hook")
+			return fmt.Errorf("no hooks found. Fix: calvin hooks new before-event-start my-hook")
 		}
 		return nil
 	})
