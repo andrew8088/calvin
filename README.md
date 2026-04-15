@@ -47,7 +47,7 @@ LINK=$(echo "$INPUT" | jq -r '.meeting_link // empty')
 osascript -e "display notification \"$TITLE\" with title \"Calvin\""
 ```
 
-Run `calvin hooks schema` to see all available JSON fields.
+Hooks also receive `previous_event` and `next_event` with adjacent event details (or `null`). Run `calvin hooks schema` to see all available JSON fields.
 
 ## Commands
 
@@ -69,6 +69,8 @@ calvin doctor        Run health checks
 calvin logs          Show daemon logs (--hook, --level, --event filters)
 calvin version       Print version
 ```
+
+Add `--json` to `events`, `next`, or `status` for machine-readable output.
 
 ## Creating hooks
 
@@ -98,7 +100,8 @@ osascript -e "display notification \"$MSG\" with title \"Calvin\""
 
 ```bash
 #!/usr/bin/env bash
-LINK=$(jq -r '.meeting_link // empty' < /dev/stdin)
+INPUT=$(cat /dev/stdin)
+LINK=$(echo "$INPUT" | jq -r '.meeting_link // empty')
 [ -n "$LINK" ] && open "$LINK"
 ```
 
@@ -106,7 +109,8 @@ LINK=$(jq -r '.meeting_link // empty' < /dev/stdin)
 
 ```bash
 #!/usr/bin/env bash
-TITLE=$(jq -r '.title' < /dev/stdin)
+INPUT=$(cat /dev/stdin)
+TITLE=$(echo "$INPUT" | jq -r '.title')
 curl -s -X POST https://slack.com/api/users.profile.set \
   -H "Authorization: Bearer $SLACK_TOKEN" \
   -H "Content-Type: application/json" \
@@ -167,6 +171,25 @@ hook_timeout_seconds = 30
 max_concurrent_hooks = 10
 hook_output_max_bytes = 65536
 hook_execution_retention_days = 30
+```
+
+### Multiple calendars
+
+By default Calvin watches your primary calendar. To watch additional calendars, add them to `config.toml`:
+
+```toml
+[[calendars]]
+id = "primary"
+
+[[calendars]]
+id = "personal@gmail.com"
+```
+
+Each hook receives a `calendar` field in its JSON payload, so hooks can filter by calendar:
+
+```bash
+CALENDAR=$(echo "$INPUT" | jq -r '.calendar')
+[ "$CALENDAR" != "primary" ] && exit 0
 ```
 
 ## File locations
