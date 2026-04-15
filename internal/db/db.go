@@ -218,9 +218,10 @@ func (d *DB) DeleteStaleSyncGeneration(currentGen int64) ([]string, error) {
 	return deleted, err
 }
 
-func (d *DB) GetSyncToken() (string, error) {
+func (d *DB) GetSyncToken(calendarID string) (string, error) {
 	var token string
-	err := sqlitex.ExecuteTransient(d.conn, `SELECT token FROM sync_state WHERE id = 1`, &sqlitex.ExecOptions{
+	err := sqlitex.ExecuteTransient(d.conn, `SELECT token FROM sync_state WHERE calendar_id = ?`, &sqlitex.ExecOptions{
+		Args: []any{calendarID},
 		ResultFunc: func(stmt *sqlite.Stmt) error {
 			token = stmt.ColumnText(0)
 			return nil
@@ -229,12 +230,12 @@ func (d *DB) GetSyncToken() (string, error) {
 	return token, err
 }
 
-func (d *DB) SetSyncToken(token string) error {
+func (d *DB) SetSyncToken(calendarID, token string) error {
 	return sqlitex.ExecuteTransient(d.conn, `
-		INSERT INTO sync_state (id, token, updated_at) VALUES (1, ?, datetime('now'))
-		ON CONFLICT(id) DO UPDATE SET token=excluded.token, updated_at=excluded.updated_at
+		INSERT INTO sync_state (id, calendar_id, token, updated_at) VALUES (NULL, ?, ?, datetime('now'))
+		ON CONFLICT(calendar_id) DO UPDATE SET token=excluded.token, updated_at=excluded.updated_at
 	`, &sqlitex.ExecOptions{
-		Args: []any{token},
+		Args: []any{calendarID, token},
 	})
 }
 
@@ -329,6 +330,54 @@ func (d *DB) PruneOldExecutions(retentionDays int) error {
 	`, &sqlitex.ExecOptions{
 		Args: []any{fmt.Sprintf("-%d days", retentionDays)},
 	})
+}
+
+func (d *DB) GetAdjacentEvents(eventID string, eventStart, eventEnd time.Time) (prev, next *calendar.Event, err error) {
+	err = sqlitex.ExecuteTransient(d.conn, `
+		SELECT id, title, start_time, end_time, location, description,
+			meeting_link, meeting_provider, attendees_json, organizer, calendar_id,
+			status, attendees_hash
+		FROM events
+		WHERE end_time <= ? AND id != ? AND status != 'cancelled'
+		ORDER BY end_time DESC LIMIT 1
+	`, &sqlitex.ExecOptions{
+		Args: []any{eventStart.Format(time.RFC3339), eventID},
+		ResultFunc: func(stmt *sqlite.Stmt) error {
+			e, err := scanEvent(stmt)
+			if err != nil {
+				return err
+			}
+			prev = &e
+			return nil
+		},
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = sqlitex.ExecuteTransient(d.conn, `
+		SELECT id, title, start_time, end_time, location, description,
+			meeting_link, meeting_provider, attendees_json, organizer, calendar_id,
+			status, attendees_hash
+		FROM events
+		WHERE start_time >= ? AND id != ? AND status != 'cancelled'
+		ORDER BY start_time ASC LIMIT 1
+	`, &sqlitex.ExecOptions{
+		Args: []any{eventEnd.Format(time.RFC3339), eventID},
+		ResultFunc: func(stmt *sqlite.Stmt) error {
+			e, err := scanEvent(stmt)
+			if err != nil {
+				return err
+			}
+			next = &e
+			return nil
+		},
+	})
+	if err != nil {
+		return prev, nil, err
+	}
+
+	return prev, next, nil
 }
 
 func (d *DB) EventCount() (int, error) {

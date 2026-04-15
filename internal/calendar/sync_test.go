@@ -132,7 +132,7 @@ func TestConvertEvent_SkipsAllDay(t *testing.T) {
 		Summary: "All day",
 		Start:   &googlecalendar.EventDateTime{Date: "2026-04-14"},
 	}
-	_, ok := convertEvent(item)
+	_, ok := convertEvent(item, "primary")
 	if ok {
 		t.Error("expected all-day event to be skipped")
 	}
@@ -140,7 +140,7 @@ func TestConvertEvent_SkipsAllDay(t *testing.T) {
 
 func TestConvertEvent_SkipsNilStart(t *testing.T) {
 	item := &googlecalendar.Event{Id: "1", Summary: "No start"}
-	_, ok := convertEvent(item)
+	_, ok := convertEvent(item, "primary")
 	if ok {
 		t.Error("expected event with nil start to be skipped")
 	}
@@ -160,7 +160,7 @@ func TestConvertEvent_ValidEvent(t *testing.T) {
 		Status:    "confirmed",
 	}
 
-	event, ok := convertEvent(item)
+	event, ok := convertEvent(item, "primary")
 	if !ok {
 		t.Fatal("expected successful conversion")
 	}
@@ -191,7 +191,7 @@ func TestConvertEvent_DefaultStatus(t *testing.T) {
 		End:   &googlecalendar.EventDateTime{DateTime: "2026-04-14T10:30:00Z"},
 	}
 
-	event, ok := convertEvent(item)
+	event, ok := convertEvent(item, "primary")
 	if !ok {
 		t.Fatal("expected successful conversion")
 	}

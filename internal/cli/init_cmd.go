@@ -104,6 +104,14 @@ hook_execution_retention_days = 30
 # oauth_client_id = ""
 # oauth_client_secret = ""
 # auth_port = 8085
+
+# Calendars to watch (defaults to "primary" if omitted):
+# [[calendars]]
+# id = "primary"
+#
+# [[calendars]]
+# id = "personal@gmail.com"
+# hook_dirs = ["personal-notify"]  # only fire these hooks for this calendar
 `
 
 var exampleHooks = map[string]string{

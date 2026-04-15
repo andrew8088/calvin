@@ -19,7 +19,7 @@ func NewSyncer(ts oauth2.TokenSource) *Syncer {
 	return &Syncer{tokenSource: ts}
 }
 
-func (s *Syncer) Sync(ctx context.Context, syncToken string) ([]Event, string, bool, error) {
+func (s *Syncer) Sync(ctx context.Context, calendarID, syncToken string) ([]Event, string, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -34,7 +34,7 @@ func (s *Syncer) Sync(ctx context.Context, syncToken string) ([]Event, string, b
 	fullSync := syncToken == ""
 
 	for {
-		call := srv.Events.List("primary").
+		call := srv.Events.List(calendarID).
 			SingleEvents(true).
 			OrderBy("startTime").
 			ShowDeleted(true)
@@ -54,13 +54,13 @@ func (s *Syncer) Sync(ctx context.Context, syncToken string) ([]Event, string, b
 		result, err := call.Do()
 		if err != nil {
 			if isGoneError(err) {
-				return s.Sync(ctx, "")
+				return s.Sync(ctx, calendarID, "")
 			}
 			return nil, "", false, fmt.Errorf("fetching events: %w", err)
 		}
 
 		for _, item := range result.Items {
-			event, ok := convertEvent(item)
+			event, ok := convertEvent(item, calendarID)
 			if !ok {
 				continue
 			}
@@ -79,7 +79,7 @@ func (s *Syncer) Sync(ctx context.Context, syncToken string) ([]Event, string, b
 	return allEvents, nextSyncToken, fullSync, nil
 }
 
-func (s *Syncer) FetchNextEvent(ctx context.Context) (*Event, error) {
+func (s *Syncer) FetchNextEvent(ctx context.Context, calendarID string) (*Event, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -89,7 +89,7 @@ func (s *Syncer) FetchNextEvent(ctx context.Context) (*Event, error) {
 	}
 
 	now := time.Now()
-	result, err := srv.Events.List("primary").
+	result, err := srv.Events.List(calendarID).
 		SingleEvents(true).
 		OrderBy("startTime").
 		TimeMin(now.Format(time.RFC3339)).
@@ -101,7 +101,7 @@ func (s *Syncer) FetchNextEvent(ctx context.Context) (*Event, error) {
 	}
 
 	for _, item := range result.Items {
-		event, ok := convertEvent(item)
+		event, ok := convertEvent(item, calendarID)
 		if !ok {
 			continue
 		}
@@ -126,7 +126,7 @@ func (s *Syncer) CheckAPIAccess(ctx context.Context) error {
 	return nil
 }
 
-func convertEvent(item *googlecalendar.Event) (Event, bool) {
+func convertEvent(item *googlecalendar.Event, calendarID string) (Event, bool) {
 	if item.Start == nil || item.Start.DateTime == "" {
 		return Event{}, false
 	}
@@ -169,7 +169,7 @@ func convertEvent(item *googlecalendar.Event) (Event, bool) {
 		MeetingProvider: provider,
 		Attendees:       attendees,
 		Organizer:       organizer,
-		Calendar:        "primary",
+		Calendar:        calendarID,
 		Status:          status,
 	}, true
 }

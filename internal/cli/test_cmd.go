@@ -179,7 +179,7 @@ func payloadFromCalendar(hookType string) (calendar.HookPayload, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	event, err := syncer.FetchNextEvent(ctx)
+	event, err := syncer.FetchNextEvent(ctx, "primary")
 	if err != nil {
 		return calendar.HookPayload{}, err
 	}

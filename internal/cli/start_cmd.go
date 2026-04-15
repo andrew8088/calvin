@@ -154,62 +154,72 @@ func runForeground(cfg *config.Config) error {
 	defer ticker.Stop()
 
 	failCount := 0
+	calendars := cfg.ResolvedCalendars()
 
 	doSync := func() {
-		syncToken, _ := database.GetSyncToken()
 		syncGen, _ := database.GetSyncGeneration()
 		newGen := syncGen + 1
 
-		events, newToken, fullSync, err := syncer.Sync(ctx, syncToken)
-		if err != nil {
-			failCount++
-			if failCount >= 5 {
-				log.Error("sync", fmt.Sprintf("Calendar sync failed %d times. Check your network connection. Cached timers still active.", failCount))
-			} else {
-				log.Warn("sync", fmt.Sprintf("Sync failed (attempt %d): %v", failCount, err))
-			}
-			return
-		}
-		failCount = 0
+		var allEvents []calendar.Event
+		var allFullSync bool
 
-		if err := database.WithTransaction(ctx, func() error {
-			for _, event := range events {
-				if err := database.UpsertEvent(event, newGen); err != nil {
-					return fmt.Errorf("upserting event: %w", err)
+		for _, cal := range calendars {
+			syncToken, _ := database.GetSyncToken(cal.ID)
+			events, newToken, fullSync, err := syncer.Sync(ctx, cal.ID, syncToken)
+			if err != nil {
+				failCount++
+				if failCount >= 5 {
+					log.Error("sync", fmt.Sprintf("Calendar %s sync failed %d times. Check your network connection.", cal.ID, failCount))
+				} else {
+					log.Warn("sync", fmt.Sprintf("Sync %s failed (attempt %d): %v", cal.ID, failCount, err))
 				}
+				continue
+			}
+			failCount = 0
+
+			if err := database.WithTransaction(ctx, func() error {
+				for _, event := range events {
+					if err := database.UpsertEvent(event, newGen); err != nil {
+						return fmt.Errorf("upserting event: %w", err)
+					}
+				}
+
+				if newToken != "" {
+					if err := database.SetSyncToken(cal.ID, newToken); err != nil {
+						return fmt.Errorf("saving sync token: %w", err)
+					}
+				}
+				return nil
+			}); err != nil {
+				log.Error("sync", fmt.Sprintf("Transaction failed for %s: %v", cal.ID, err))
+				continue
 			}
 
+			allEvents = append(allEvents, events...)
 			if fullSync {
-				deleted, err := database.DeleteStaleSyncGeneration(newGen)
-				if err != nil {
-					return fmt.Errorf("cleaning stale events: %w", err)
-				}
-				if len(deleted) > 0 {
-					log.Info("sync", fmt.Sprintf("Removed %d stale events", len(deleted)))
-				}
+				allFullSync = true
 			}
+		}
 
-			if newToken != "" {
-				if err := database.SetSyncToken(newToken); err != nil {
-					return fmt.Errorf("saving sync token: %w", err)
-				}
+		if allFullSync {
+			deleted, err := database.DeleteStaleSyncGeneration(newGen)
+			if err != nil {
+				log.Error("sync", fmt.Sprintf("Failed to clean stale events: %v", err))
+			} else if len(deleted) > 0 {
+				log.Info("sync", fmt.Sprintf("Removed %d stale events", len(deleted)))
 			}
-			return nil
-		}); err != nil {
-			log.Error("sync", fmt.Sprintf("Transaction failed: %v", err))
-			return
 		}
 
 		dbEvents, _ := database.ListUpcomingEvents(time.Now().Add(-1*time.Hour), 200)
-		diffs := calendar.Diff(dbEvents, events, newGen)
+		diffs := calendar.Diff(dbEvents, allEvents, newGen)
 		sched.ProcessDiff(ctx, diffs)
 
 		if err := sched.ScheduleFromDB(ctx); err != nil {
 			log.Error("scheduler", fmt.Sprintf("Failed to schedule: %v", err))
 		}
 
-		log.Info("sync", fmt.Sprintf("Synced %d events, %d diffs, %d timers active",
-			len(events), len(diffs), sched.TimerCount()))
+		log.Info("sync", fmt.Sprintf("Synced %d events across %d calendars, %d diffs, %d timers active",
+			len(allEvents), len(calendars), len(diffs), sched.TimerCount()))
 	}
 
 	doSync()

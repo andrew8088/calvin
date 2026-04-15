@@ -37,7 +37,7 @@ func runStatus() error {
 	defer database.Close()
 
 	running, pid, uptime := daemonStatus()
-	syncToken, _ := database.GetSyncToken()
+	syncToken, _ := database.GetSyncToken("primary")
 	eventCount, _ := database.EventCount()
 	hookCounts, _ := hooks.CountByType()
 	success, failed, timeout, _ := database.GetHookStats()

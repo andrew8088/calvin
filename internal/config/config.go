@@ -8,16 +8,22 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+type CalendarConfig struct {
+	ID       string   `toml:"id"`
+	HookDirs []string `toml:"hook_dirs"`
+}
+
 type Config struct {
-	SyncIntervalSeconds        int    `toml:"sync_interval_seconds"`
-	PreEventMinutes            int    `toml:"pre_event_minutes"`
-	HookTimeoutSeconds         int    `toml:"hook_timeout_seconds"`
-	MaxConcurrentHooks         int    `toml:"max_concurrent_hooks"`
-	HookOutputMaxBytes         int    `toml:"hook_output_max_bytes"`
-	HookExecutionRetentionDays int    `toml:"hook_execution_retention_days"`
-	OAuthClientID              string `toml:"oauth_client_id"`
-	OAuthClientSecret          string `toml:"oauth_client_secret"`
-	AuthPort                   int    `toml:"auth_port"`
+	SyncIntervalSeconds        int              `toml:"sync_interval_seconds"`
+	PreEventMinutes            int              `toml:"pre_event_minutes"`
+	HookTimeoutSeconds         int              `toml:"hook_timeout_seconds"`
+	MaxConcurrentHooks         int              `toml:"max_concurrent_hooks"`
+	HookOutputMaxBytes         int              `toml:"hook_output_max_bytes"`
+	HookExecutionRetentionDays int              `toml:"hook_execution_retention_days"`
+	OAuthClientID              string           `toml:"oauth_client_id"`
+	OAuthClientSecret          string           `toml:"oauth_client_secret"`
+	AuthPort                   int              `toml:"auth_port"`
+	Calendars                  []CalendarConfig `toml:"calendars"`
 }
 
 func Default() *Config {
@@ -78,6 +84,13 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid config: auth_port=%d (must be 1-65535)", c.AuthPort)
 	}
 	return nil
+}
+
+func (c *Config) ResolvedCalendars() []CalendarConfig {
+	if len(c.Calendars) > 0 {
+		return c.Calendars
+	}
+	return []CalendarConfig{{ID: "primary"}}
 }
 
 func xdgDir(envVar, defaultSub string) string {

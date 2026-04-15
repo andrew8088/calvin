@@ -154,7 +154,7 @@ func TestListUpcomingEvents(t *testing.T) {
 func TestSyncToken(t *testing.T) {
 	d := openTestDB(t)
 
-	token, err := d.GetSyncToken()
+	token, err := d.GetSyncToken("primary")
 	if err != nil {
 		t.Fatalf("GetSyncToken: %v", err)
 	}
@@ -162,16 +162,33 @@ func TestSyncToken(t *testing.T) {
 		t.Errorf("expected empty initial token, got %q", token)
 	}
 
-	d.SetSyncToken("abc123")
-	token, _ = d.GetSyncToken()
+	d.SetSyncToken("primary", "abc123")
+	token, _ = d.GetSyncToken("primary")
 	if token != "abc123" {
 		t.Errorf("expected 'abc123', got %q", token)
 	}
 
-	d.SetSyncToken("def456")
-	token, _ = d.GetSyncToken()
+	d.SetSyncToken("primary", "def456")
+	token, _ = d.GetSyncToken("primary")
 	if token != "def456" {
 		t.Errorf("expected 'def456' after update, got %q", token)
+	}
+}
+
+func TestSyncToken_PerCalendar(t *testing.T) {
+	d := openTestDB(t)
+
+	d.SetSyncToken("primary", "token-primary")
+	d.SetSyncToken("work@company.com", "token-work")
+
+	tok1, _ := d.GetSyncToken("primary")
+	tok2, _ := d.GetSyncToken("work@company.com")
+
+	if tok1 != "token-primary" {
+		t.Errorf("primary token = %q, want token-primary", tok1)
+	}
+	if tok2 != "token-work" {
+		t.Errorf("work token = %q, want token-work", tok2)
 	}
 }
 
@@ -377,6 +394,88 @@ func TestParseAttendees_RoundTrip(t *testing.T) {
 		if a.Response != original[i].Response {
 			t.Errorf("[%d] Response = %q, want %q", i, a.Response, original[i].Response)
 		}
+	}
+}
+
+func TestGetAdjacentEvents(t *testing.T) {
+	d := openTestDB(t)
+
+	e1 := testEvent("evt-1")
+	e1.Title = "Morning Standup"
+	e1.Start = time.Date(2026, 4, 14, 9, 0, 0, 0, time.UTC)
+	e1.End = time.Date(2026, 4, 14, 9, 30, 0, 0, time.UTC)
+	d.UpsertEvent(e1, 1)
+
+	e2 := testEvent("evt-2")
+	e2.Title = "Design Review"
+	e2.Start = time.Date(2026, 4, 14, 10, 0, 0, 0, time.UTC)
+	e2.End = time.Date(2026, 4, 14, 11, 0, 0, 0, time.UTC)
+	d.UpsertEvent(e2, 1)
+
+	e3 := testEvent("evt-3")
+	e3.Title = "Lunch"
+	e3.Start = time.Date(2026, 4, 14, 12, 0, 0, 0, time.UTC)
+	e3.End = time.Date(2026, 4, 14, 13, 0, 0, 0, time.UTC)
+	d.UpsertEvent(e3, 1)
+
+	prev, next, err := d.GetAdjacentEvents("evt-2", e2.Start, e2.End)
+	if err != nil {
+		t.Fatalf("GetAdjacentEvents: %v", err)
+	}
+	if prev == nil {
+		t.Fatal("expected previous event, got nil")
+	}
+	if prev.ID != "evt-1" {
+		t.Errorf("previous event = %q, want evt-1", prev.ID)
+	}
+	if next == nil {
+		t.Fatal("expected next event, got nil")
+	}
+	if next.ID != "evt-3" {
+		t.Errorf("next event = %q, want evt-3", next.ID)
+	}
+}
+
+func TestGetAdjacentEvents_NoPrev(t *testing.T) {
+	d := openTestDB(t)
+
+	e := testEvent("only")
+	e.Start = time.Date(2026, 4, 14, 10, 0, 0, 0, time.UTC)
+	e.End = time.Date(2026, 4, 14, 11, 0, 0, 0, time.UTC)
+	d.UpsertEvent(e, 1)
+
+	prev, next, err := d.GetAdjacentEvents("only", e.Start, e.End)
+	if err != nil {
+		t.Fatalf("GetAdjacentEvents: %v", err)
+	}
+	if prev != nil {
+		t.Errorf("expected nil prev, got %q", prev.ID)
+	}
+	if next != nil {
+		t.Errorf("expected nil next, got %q", next.ID)
+	}
+}
+
+func TestGetAdjacentEvents_SkipsCancelled(t *testing.T) {
+	d := openTestDB(t)
+
+	cancelled := testEvent("cancelled")
+	cancelled.Start = time.Date(2026, 4, 14, 9, 0, 0, 0, time.UTC)
+	cancelled.End = time.Date(2026, 4, 14, 9, 30, 0, 0, time.UTC)
+	cancelled.Status = "cancelled"
+	d.UpsertEvent(cancelled, 1)
+
+	e := testEvent("current")
+	e.Start = time.Date(2026, 4, 14, 10, 0, 0, 0, time.UTC)
+	e.End = time.Date(2026, 4, 14, 11, 0, 0, 0, time.UTC)
+	d.UpsertEvent(e, 1)
+
+	prev, _, err := d.GetAdjacentEvents("current", e.Start, e.End)
+	if err != nil {
+		t.Fatalf("GetAdjacentEvents: %v", err)
+	}
+	if prev != nil {
+		t.Errorf("expected nil prev (cancelled should be skipped), got %q", prev.ID)
 	}
 }
 
