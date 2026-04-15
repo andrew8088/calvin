@@ -111,7 +111,6 @@ hook_execution_retention_days = 30
 #
 # [[calendars]]
 # id = "personal@gmail.com"
-# hook_dirs = ["personal-notify"]  # only fire these hooks for this calendar
 `
 
 var exampleHooks = map[string]string{

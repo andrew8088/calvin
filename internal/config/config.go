@@ -9,8 +9,7 @@ import (
 )
 
 type CalendarConfig struct {
-	ID       string   `toml:"id"`
-	HookDirs []string `toml:"hook_dirs"`
+	ID string `toml:"id"`
 }
 
 type Config struct {

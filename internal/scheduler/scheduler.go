@@ -162,12 +162,6 @@ func (s *Scheduler) fireHook(ctx context.Context, event calendar.Event, hookType
 		return
 	}
 
-	hookList = s.filterHooksByCalendar(hookList, event.Calendar)
-
-	if len(hookList) == 0 {
-		return
-	}
-
 	log.Info("scheduler", fmt.Sprintf("Firing %d %s hooks for: %s", len(hookList), hookType, event.Title))
 
 	prev, next, _ := s.database.GetAdjacentEvents(event.ID, event.Start, event.End)
@@ -178,29 +172,6 @@ func (s *Scheduler) fireHook(ctx context.Context, event calendar.Event, hookType
 			log.Error("hooks", fmt.Sprintf("%s %s: %s (%s)", hookType, r.HookName, r.Status, r.EventID))
 		}
 	}
-}
-
-func (s *Scheduler) filterHooksByCalendar(hookList []hooks.Hook, calendarID string) []hooks.Hook {
-	for _, cal := range s.cfg.ResolvedCalendars() {
-		if cal.ID != calendarID {
-			continue
-		}
-		if len(cal.HookDirs) == 0 {
-			return hookList
-		}
-		allowed := make(map[string]bool)
-		for _, name := range cal.HookDirs {
-			allowed[name] = true
-		}
-		var filtered []hooks.Hook
-		for _, h := range hookList {
-			if allowed[h.Name] {
-				filtered = append(filtered, h)
-			}
-		}
-		return filtered
-	}
-	return hookList
 }
 
 func (s *Scheduler) cancelTimers(et *EventTimers) {
