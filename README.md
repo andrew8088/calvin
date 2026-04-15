@@ -186,7 +186,7 @@ Calvin follows the XDG Base Directory Specification:
 
 **Why not cron + gcalcli?**
 
-Calvin fires hooks at sub-second precision on event boundaries — something cron's minute granularity can't match. It deduplicates across restarts (hooks won't re-fire after a crash), recovers from failures via the `hook_executions` table, and delivers structured event JSON on stdin so your scripts don't need to parse CLI output. The hook convention (drop a script in a directory, done) means zero per-hook configuration.
+Calvin fires hooks at sub-second precision on event boundaries — something cron's minute granularity can't match. It deduplicates across restarts (hooks won't re-fire after a crash), recovers from failures via the `hook_executions` table, and delivers structured event JSON on stdin so your scripts don't need to parse CLI output. The hook convention (drop a script in a directory, done) means zero per-hook configuration. And setup is simpler: Calvin ships its own OAuth credentials, so you don't need to create a Google Cloud project or configure your own API keys.
 
 ## Privacy
 
