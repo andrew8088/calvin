@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -129,6 +130,80 @@ func TestListEventsForDay_ExcludesCancelled(t *testing.T) {
 	events, _ := d.ListEventsForDay(time.Date(2026, 4, 14, 0, 0, 0, 0, time.UTC))
 	if len(events) != 0 {
 		t.Errorf("expected 0 events (cancelled excluded), got %d", len(events))
+	}
+}
+
+func TestListEventsBetween(t *testing.T) {
+	d := openTestDB(t)
+
+	// Insert events across several days
+	for i := 0; i < 10; i++ {
+		e := testEvent(fmt.Sprintf("evt-%d", i))
+		e.Start = time.Date(2026, 4, 14+i, 10, 0, 0, 0, time.UTC)
+		e.End = e.Start.Add(time.Hour)
+		d.UpsertEvent(e, 1)
+	}
+
+	start := time.Date(2026, 4, 14, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 4, 21, 0, 0, 0, 0, time.UTC) // 7-day range
+
+	events, err := d.ListEventsBetween(start, end)
+	if err != nil {
+		t.Fatalf("ListEventsBetween: %v", err)
+	}
+	if len(events) != 7 {
+		t.Fatalf("expected 7 events in 7-day range, got %d", len(events))
+	}
+
+	// Verify chronological order
+	for i := 1; i < len(events); i++ {
+		if events[i].Start.Before(events[i-1].Start) {
+			t.Errorf("events not in chronological order at index %d", i)
+		}
+	}
+}
+
+func TestListEventsBetween_ExcludesCancelled(t *testing.T) {
+	d := openTestDB(t)
+
+	e := testEvent("active")
+	e.Start = time.Date(2026, 4, 14, 10, 0, 0, 0, time.UTC)
+	e.End = time.Date(2026, 4, 14, 11, 0, 0, 0, time.UTC)
+	d.UpsertEvent(e, 1)
+
+	cancelled := testEvent("cancelled")
+	cancelled.Start = time.Date(2026, 4, 15, 10, 0, 0, 0, time.UTC)
+	cancelled.End = time.Date(2026, 4, 15, 11, 0, 0, 0, time.UTC)
+	cancelled.Status = "cancelled"
+	d.UpsertEvent(cancelled, 1)
+
+	start := time.Date(2026, 4, 14, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 4, 21, 0, 0, 0, 0, time.UTC)
+
+	events, err := d.ListEventsBetween(start, end)
+	if err != nil {
+		t.Fatalf("ListEventsBetween: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event (cancelled excluded), got %d", len(events))
+	}
+	if events[0].ID != "active" {
+		t.Errorf("expected 'active', got %q", events[0].ID)
+	}
+}
+
+func TestListEventsBetween_Empty(t *testing.T) {
+	d := openTestDB(t)
+
+	start := time.Date(2026, 4, 14, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 4, 21, 0, 0, 0, 0, time.UTC)
+
+	events, err := d.ListEventsBetween(start, end)
+	if err != nil {
+		t.Fatalf("ListEventsBetween: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected 0 events, got %d", len(events))
 	}
 }
 

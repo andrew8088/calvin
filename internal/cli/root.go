@@ -61,4 +61,5 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(completionCmd)
 	rootCmd.AddCommand(syncCmd)
+	rootCmd.AddCommand(weekCmd)
 }
