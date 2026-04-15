@@ -36,9 +36,52 @@ func runStatus() error {
 	}
 	defer database.Close()
 
+	running, pid, uptime := daemonStatus()
+	syncToken, _ := database.GetSyncToken()
+	eventCount, _ := database.EventCount()
+	hookCounts, _ := hooks.CountByType()
+	success, failed, timeout, _ := database.GetHookStats()
+
+	if jsonOutput {
+		tokenStatus := "missing"
+		if auth.HasToken() {
+			cfg, _ := config.Load()
+			if err := auth.CheckTokenValid(cfg); err != nil {
+				tokenStatus = "invalid"
+			} else {
+				tokenStatus = "valid"
+			}
+		}
+
+		return printJSON(struct {
+			Running       bool           `json:"running"`
+			PID           int            `json:"pid"`
+			UptimeSeconds float64        `json:"uptime_seconds"`
+			SyncToken     bool           `json:"sync_token"`
+			EventCount    int            `json:"events_today"`
+			SyncInterval  int            `json:"sync_interval_seconds"`
+			Hooks         map[string]int `json:"hooks_registered"`
+			HooksSuccess  int            `json:"hooks_success_today"`
+			HooksFailed   int            `json:"hooks_failed_today"`
+			HooksTimeout  int            `json:"hooks_timeout_today"`
+			AuthStatus    string         `json:"auth_status"`
+		}{
+			Running:       running,
+			PID:           pid,
+			UptimeSeconds: uptime,
+			SyncToken:     syncToken != "",
+			EventCount:    eventCount,
+			SyncInterval:  config.Default().SyncIntervalSeconds,
+			Hooks:         hookCounts,
+			HooksSuccess:  success,
+			HooksFailed:   failed,
+			HooksTimeout:  timeout,
+			AuthStatus:    tokenStatus,
+		})
+	}
+
 	fmt.Println()
 
-	running, pid, uptime := daemonStatus()
 	if running {
 		fmt.Printf("  %s Calvin is running (uptime: %s)\n", symRun(), humanDuration(int64(uptime)))
 	} else {
@@ -49,8 +92,6 @@ func runStatus() error {
 	}
 	fmt.Println()
 
-	syncToken, _ := database.GetSyncToken()
-	eventCount, _ := database.EventCount()
 	fmt.Printf("  %s\n", bold("Sync"))
 	if syncToken != "" {
 		fmt.Printf("    last sync:    %s\n", dim("token present"))
@@ -61,8 +102,6 @@ func runStatus() error {
 	fmt.Printf("    sync interval: %ds\n", config.Default().SyncIntervalSeconds)
 	fmt.Println()
 
-	hookCounts, _ := hooks.CountByType()
-	success, failed, timeout, _ := database.GetHookStats()
 	fmt.Printf("  %s\n", bold("Hooks"))
 	parts := []string{}
 	for _, t := range []string{"pre_event", "event_start", "event_end"} {

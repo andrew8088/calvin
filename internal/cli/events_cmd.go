@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/andrew8088/calvin/internal/calendar"
 	"github.com/andrew8088/calvin/internal/config"
 	"github.com/andrew8088/calvin/internal/db"
 	"github.com/spf13/cobra"
@@ -47,8 +48,15 @@ func runEvents() error {
 	}
 
 	if len(events) == 0 {
+		if jsonOutput {
+			return printJSON([]calendar.Event{})
+		}
 		fmt.Println("  No events today.")
 		return nil
+	}
+
+	if jsonOutput {
+		return printJSON(events)
 	}
 
 	fmt.Println()
@@ -117,6 +125,40 @@ func runEventDetail(eventID string) error {
 		return fmt.Errorf("event not found")
 	}
 
+	execs, err := database.GetHookExecutions(eventID)
+	if err != nil {
+		return err
+	}
+
+	if jsonOutput {
+		type execJSON struct {
+			HookName   string `json:"hook_name"`
+			HookType   string `json:"hook_type"`
+			Status     string `json:"status"`
+			Stdout     string `json:"stdout,omitempty"`
+			Stderr     string `json:"stderr,omitempty"`
+			DurationMs int64  `json:"duration_ms"`
+			ExecutedAt string `json:"executed_at"`
+		}
+		type detailJSON struct {
+			calendar.Event
+			HookExecutions []execJSON `json:"hook_executions"`
+		}
+		je := []execJSON{}
+		for _, ex := range execs {
+			je = append(je, execJSON{
+				HookName:   ex.HookName,
+				HookType:   ex.HookType,
+				Status:     ex.Status,
+				Stdout:     ex.Stdout,
+				Stderr:     ex.Stderr,
+				DurationMs: ex.DurationMs,
+				ExecutedAt: ex.ExecutedAt,
+			})
+		}
+		return printJSON(detailJSON{Event: *event, HookExecutions: je})
+	}
+
 	fmt.Println()
 	fmt.Printf("  %s\n", bold(event.Title))
 	fmt.Printf("  %s - %s\n", dim(event.Start.Local().Format("Mon Jan 2 15:04")), dim(event.End.Local().Format("15:04")))
@@ -125,11 +167,6 @@ func runEventDetail(eventID string) error {
 	}
 	fmt.Printf("  ID: %s\n", dim(event.ID))
 	fmt.Println()
-
-	execs, err := database.GetHookExecutions(eventID)
-	if err != nil {
-		return err
-	}
 
 	if len(execs) == 0 {
 		fmt.Println("  No hook executions recorded.")

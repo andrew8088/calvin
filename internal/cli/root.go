@@ -1,12 +1,16 @@
 package cli
 
 import (
+	"encoding/json"
+	"fmt"
+
 	"github.com/spf13/cobra"
 )
 
 var (
 	appVersion = "dev"
 	appCommit  = "none"
+	jsonOutput bool
 )
 
 func SetVersion(version, commit string) {
@@ -32,7 +36,17 @@ Quick start:
   calvin start --background    Start the daemon`,
 }
 
+func printJSON(v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
 func init() {
+	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(startCmd)

@@ -39,11 +39,19 @@ func runNext() error {
 	}
 
 	if len(events) == 0 {
+		if jsonOutput {
+			return printJSON(nil)
+		}
 		fmt.Println("  No upcoming events today. Enjoy the quiet.")
 		return nil
 	}
 
 	e := events[0]
+
+	if jsonOutput {
+		return printJSON(e)
+	}
+
 	until := time.Until(e.Start).Seconds()
 
 	fmt.Println()
