@@ -147,6 +147,9 @@ func runForeground(cfg *config.Config) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
+	syncCh := make(chan os.Signal, 1)
+	signal.Notify(syncCh, syscall.SIGUSR1)
+
 	ticker := time.NewTicker(time.Duration(cfg.SyncIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 
@@ -215,6 +218,10 @@ func runForeground(cfg *config.Config) error {
 		select {
 		case <-ticker.C:
 			doSync()
+		case <-syncCh:
+			log.Info("daemon", "Received SIGUSR1, forcing sync")
+			doSync()
+			ticker.Reset(time.Duration(cfg.SyncIntervalSeconds) * time.Second)
 		case sig := <-sigCh:
 			log.Info("daemon", fmt.Sprintf("Received %s, shutting down...", sig))
 			ticker.Stop()

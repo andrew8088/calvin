@@ -56,6 +56,7 @@ calvin init          Scaffold config and example hooks
 calvin auth          Authenticate with Google Calendar
 calvin start         Start the daemon (--background for detached)
 calvin stop          Stop the daemon
+calvin sync          Force an immediate calendar sync
 calvin status        Show daemon health dashboard
 calvin next          Show next upcoming event with countdown
 calvin events        List today's events
@@ -180,6 +181,12 @@ Calvin follows the XDG Base Directory Specification:
 | Hooks   | `~/.config/calvin/hooks/` |
 | Logs    | `~/.local/state/calvin/calvin.log` |
 | DB      | `~/.local/share/calvin/events.db` |
+
+## FAQ
+
+**Why not cron + gcalcli?**
+
+Calvin fires hooks at sub-second precision on event boundaries — something cron's minute granularity can't match. It deduplicates across restarts (hooks won't re-fire after a crash), recovers from failures via the `hook_executions` table, and delivers structured event JSON on stdin so your scripts don't need to parse CLI output. The hook convention (drop a script in a directory, done) means zero per-hook configuration.
 
 ## Privacy
 

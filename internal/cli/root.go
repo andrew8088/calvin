@@ -46,4 +46,5 @@ func init() {
 	rootCmd.AddCommand(logsCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(completionCmd)
+	rootCmd.AddCommand(syncCmd)
 }
