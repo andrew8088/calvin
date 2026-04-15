@@ -148,7 +148,7 @@ func (d *DB) GetEvent(id string) (*calendar.Event, error) {
 func (d *DB) ListEventsForDay(day time.Time) ([]calendar.Event, error) {
 	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
 	end := start.Add(24 * time.Hour)
-	return d.listEventsBetween(start, end)
+	return d.ListEventsBetween(start, end)
 }
 
 func (d *DB) ListUpcomingEvents(from time.Time, limit int) ([]calendar.Event, error) {
@@ -173,7 +173,7 @@ func (d *DB) ListUpcomingEvents(from time.Time, limit int) ([]calendar.Event, er
 	return events, err
 }
 
-func (d *DB) listEventsBetween(start, end time.Time) ([]calendar.Event, error) {
+func (d *DB) ListEventsBetween(start, end time.Time) ([]calendar.Event, error) {
 	var events []calendar.Event
 	err := sqlitex.ExecuteTransient(d.conn, `
 		SELECT id, title, start_time, end_time, location, description,
