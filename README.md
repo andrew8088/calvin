@@ -41,8 +41,9 @@ Hooks receive event data as JSON on stdin:
 
 ```bash
 #!/usr/bin/env bash
-TITLE=$(jq -r '.title' < /dev/stdin)
-LINK=$(jq -r '.meeting_link // empty' < /dev/stdin)
+INPUT=$(cat /dev/stdin)
+TITLE=$(echo "$INPUT" | jq -r '.title')
+LINK=$(echo "$INPUT" | jq -r '.meeting_link // empty')
 osascript -e "display notification \"$TITLE\" with title \"Calvin\""
 ```
 
@@ -84,8 +85,9 @@ Hooks must be executable (`chmod +x`). Calvin discovers hooks by scanning the ho
 
 ```bash
 #!/usr/bin/env bash
-TITLE=$(jq -r '.title' < /dev/stdin)
-LINK=$(jq -r '.meeting_link // empty' < /dev/stdin)
+INPUT=$(cat /dev/stdin)
+TITLE=$(echo "$INPUT" | jq -r '.title')
+LINK=$(echo "$INPUT" | jq -r '.meeting_link // empty')
 MSG="Meeting in 5 min: $TITLE"
 [ -n "$LINK" ] && MSG="$MSG\n$LINK"
 osascript -e "display notification \"$MSG\" with title \"Calvin\""
@@ -133,9 +135,10 @@ shortcuts run "Turn On Focus"
 
 ```bash
 #!/usr/bin/env bash
-TITLE=$(jq -r '.title' < /dev/stdin)
-ATTENDEES=$(jq -r '.attendees[].name' < /dev/stdin | tr '\n' ', ')
-DATE=$(jq -r '.start' < /dev/stdin | cut -dT -f1)
+INPUT=$(cat /dev/stdin)
+TITLE=$(echo "$INPUT" | jq -r '.title')
+ATTENDEES=$(echo "$INPUT" | jq -r '.attendees[].name' | tr '\n' ', ')
+DATE=$(echo "$INPUT" | jq -r '.start' | cut -dT -f1)
 FILE=~/notes/$DATE-$(echo "$TITLE" | tr ' ' '-' | tr '[:upper:]' '[:lower:]').md
 mkdir -p ~/notes
 cat > "$FILE" << EOF

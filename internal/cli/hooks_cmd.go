@@ -188,7 +188,7 @@ func runHooksSchema() error {
 	fmt.Printf("    previous_event   %s\n", dim("null if this is the first event"))
 	fmt.Printf("    next_event       %s\n", dim("null if this is the last event"))
 	fmt.Println()
-	fmt.Printf("  Usage in bash: %s\n", dim("TITLE=$(jq -r '.title' < /dev/stdin)"))
+	fmt.Printf("  Usage in bash: %s\n", dim("INPUT=$(cat /dev/stdin); TITLE=$(echo \"$INPUT\" | jq -r '.title')"))
 	fmt.Println()
 
 	return nil

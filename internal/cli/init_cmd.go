@@ -114,9 +114,10 @@ var exampleHooks = map[string]string{
 # Hook type: pre_event (fires before the event starts)
 # Run: calvin hooks schema  to see all available JSON fields
 
-TITLE=$(jq -r '.title' < /dev/stdin)
-START=$(jq -r '.start' < /dev/stdin)
-LINK=$(jq -r '.meeting_link // empty' < /dev/stdin)
+INPUT=$(cat /dev/stdin)
+TITLE=$(echo "$INPUT" | jq -r '.title')
+START=$(echo "$INPUT" | jq -r '.start')
+LINK=$(echo "$INPUT" | jq -r '.meeting_link // empty')
 
 MSG="Meeting in 5 min: $TITLE"
 if [ -n "$LINK" ]; then
@@ -131,8 +132,9 @@ echo "Notified: $TITLE at $START"
 # Example Calvin hook: auto-open meeting links when events start
 # Hook type: event_start (fires when the event begins)
 
-LINK=$(jq -r '.meeting_link // empty' < /dev/stdin)
-TITLE=$(jq -r '.title' < /dev/stdin)
+INPUT=$(cat /dev/stdin)
+LINK=$(echo "$INPUT" | jq -r '.meeting_link // empty')
+TITLE=$(echo "$INPUT" | jq -r '.title')
 
 if [ -n "$LINK" ]; then
   open "$LINK"
@@ -145,9 +147,10 @@ fi
 # Example Calvin hook: log when meetings end
 # Hook type: event_end (fires when the event ends)
 
-TITLE=$(jq -r '.title' < /dev/stdin)
-DURATION_START=$(jq -r '.start' < /dev/stdin)
-DURATION_END=$(jq -r '.end' < /dev/stdin)
+INPUT=$(cat /dev/stdin)
+TITLE=$(echo "$INPUT" | jq -r '.title')
+DURATION_START=$(echo "$INPUT" | jq -r '.start')
+DURATION_END=$(echo "$INPUT" | jq -r '.end')
 
 echo "Meeting ended: $TITLE ($DURATION_START to $DURATION_END)"
 `,
