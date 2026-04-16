@@ -52,11 +52,14 @@ func runNext() error {
 		return printJSON(e)
 	}
 
-	until := time.Until(e.Start).Seconds()
-
 	fmt.Println()
 	fmt.Printf("  %s\n", bold(e.Title))
-	fmt.Printf("  starts %s\n", humanCountdown(int64(until)))
+	if e.AllDay {
+		fmt.Printf("  %s\n", dim(e.Start.Local().Format("Mon Jan 2")+" (all day)"))
+	} else {
+		until := time.Until(e.Start).Seconds()
+		fmt.Printf("  starts %s\n", humanCountdown(int64(until)))
+	}
 	fmt.Println()
 
 	if e.MeetingLink != "" {

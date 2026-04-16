@@ -102,14 +102,18 @@ func migrate(conn *sqlite.Conn) error {
 
 func (d *DB) UpsertEvent(e calendar.Event, syncGen int64) error {
 	hash := attendeesHash(e.Attendees)
+	allDay := 0
+	if e.AllDay {
+		allDay = 1
+	}
 	return sqlitex.ExecuteTransient(d.conn, `
-		INSERT INTO events (id, title, start_time, end_time, location, description,
+		INSERT INTO events (id, title, start_time, end_time, all_day, location, description,
 			meeting_link, meeting_provider, attendees_json, organizer, calendar_id,
 			status, attendees_hash, sync_generation)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title=excluded.title, start_time=excluded.start_time, end_time=excluded.end_time,
-			location=excluded.location, description=excluded.description,
+			all_day=excluded.all_day, location=excluded.location, description=excluded.description,
 			meeting_link=excluded.meeting_link, meeting_provider=excluded.meeting_provider,
 			attendees_json=excluded.attendees_json, organizer=excluded.organizer,
 			calendar_id=excluded.calendar_id, status=excluded.status,
@@ -118,7 +122,7 @@ func (d *DB) UpsertEvent(e calendar.Event, syncGen int64) error {
 	`, &sqlitex.ExecOptions{
 		Args: []any{
 			e.ID, e.Title, e.Start.Format(time.RFC3339), e.End.Format(time.RFC3339),
-			e.Location, e.Description, e.MeetingLink, e.MeetingProvider,
+			allDay, e.Location, e.Description, e.MeetingLink, e.MeetingProvider,
 			attendeesJSON(e.Attendees), e.Organizer, e.Calendar, e.Status, hash, syncGen,
 		},
 	})
@@ -127,7 +131,7 @@ func (d *DB) UpsertEvent(e calendar.Event, syncGen int64) error {
 func (d *DB) GetEvent(id string) (*calendar.Event, error) {
 	var event *calendar.Event
 	err := sqlitex.ExecuteTransient(d.conn, `
-		SELECT id, title, start_time, end_time, location, description,
+		SELECT id, title, start_time, end_time, all_day, location, description,
 			meeting_link, meeting_provider, attendees_json, organizer, calendar_id,
 			status, attendees_hash
 		FROM events WHERE id = ?
@@ -154,7 +158,7 @@ func (d *DB) ListEventsForDay(day time.Time) ([]calendar.Event, error) {
 func (d *DB) ListUpcomingEvents(from time.Time, limit int) ([]calendar.Event, error) {
 	var events []calendar.Event
 	err := sqlitex.ExecuteTransient(d.conn, `
-		SELECT id, title, start_time, end_time, location, description,
+		SELECT id, title, start_time, end_time, all_day, location, description,
 			meeting_link, meeting_provider, attendees_json, organizer, calendar_id,
 			status, attendees_hash
 		FROM events WHERE start_time >= ? AND status != 'cancelled'
@@ -176,7 +180,7 @@ func (d *DB) ListUpcomingEvents(from time.Time, limit int) ([]calendar.Event, er
 func (d *DB) ListEventsBetween(start, end time.Time) ([]calendar.Event, error) {
 	var events []calendar.Event
 	err := sqlitex.ExecuteTransient(d.conn, `
-		SELECT id, title, start_time, end_time, location, description,
+		SELECT id, title, start_time, end_time, all_day, location, description,
 			meeting_link, meeting_provider, attendees_json, organizer, calendar_id,
 			status, attendees_hash
 		FROM events
@@ -334,7 +338,7 @@ func (d *DB) PruneOldExecutions(retentionDays int) error {
 
 func (d *DB) GetAdjacentEvents(eventID string, eventStart, eventEnd time.Time) (prev, next *calendar.Event, err error) {
 	err = sqlitex.ExecuteTransient(d.conn, `
-		SELECT id, title, start_time, end_time, location, description,
+		SELECT id, title, start_time, end_time, all_day, location, description,
 			meeting_link, meeting_provider, attendees_json, organizer, calendar_id,
 			status, attendees_hash
 		FROM events
@@ -356,7 +360,7 @@ func (d *DB) GetAdjacentEvents(eventID string, eventStart, eventEnd time.Time) (
 	}
 
 	err = sqlitex.ExecuteTransient(d.conn, `
-		SELECT id, title, start_time, end_time, location, description,
+		SELECT id, title, start_time, end_time, all_day, location, description,
 			meeting_link, meeting_provider, attendees_json, organizer, calendar_id,
 			status, attendees_hash
 		FROM events
@@ -427,6 +431,7 @@ type HookExecution struct {
 func scanEvent(stmt *sqlite.Stmt) (calendar.Event, error) {
 	startStr := stmt.ColumnText(2)
 	endStr := stmt.ColumnText(3)
+	allDay := stmt.ColumnInt(4) == 1
 	start, err := time.Parse(time.RFC3339, startStr)
 	if err != nil {
 		return calendar.Event{}, fmt.Errorf("parsing start time: %w", err)
@@ -441,15 +446,16 @@ func scanEvent(stmt *sqlite.Stmt) (calendar.Event, error) {
 		Title:           stmt.ColumnText(1),
 		Start:           start,
 		End:             end,
-		Location:        stmt.ColumnText(4),
-		Description:     stmt.ColumnText(5),
-		MeetingLink:     stmt.ColumnText(6),
-		MeetingProvider: stmt.ColumnText(7),
-		Attendees:       parseAttendees(stmt.ColumnText(8)),
-		Organizer:       stmt.ColumnText(9),
-		Calendar:        stmt.ColumnText(10),
-		Status:          stmt.ColumnText(11),
-		AttendeesHash:   stmt.ColumnText(12),
+		AllDay:          allDay,
+		Location:        stmt.ColumnText(5),
+		Description:     stmt.ColumnText(6),
+		MeetingLink:     stmt.ColumnText(7),
+		MeetingProvider: stmt.ColumnText(8),
+		Attendees:       parseAttendees(stmt.ColumnText(9)),
+		Organizer:       stmt.ColumnText(10),
+		Calendar:        stmt.ColumnText(11),
+		Status:          stmt.ColumnText(12),
+		AttendeesHash:   stmt.ColumnText(13),
 	}, nil
 }
 

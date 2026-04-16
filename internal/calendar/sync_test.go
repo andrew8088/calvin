@@ -126,15 +126,63 @@ func TestIsGoneError(t *testing.T) {
 	}
 }
 
-func TestConvertEvent_SkipsAllDay(t *testing.T) {
+func TestConvertEvent_AllDayEvent(t *testing.T) {
 	item := &googlecalendar.Event{
 		Id:      "1",
-		Summary: "All day",
+		Summary: "Birthday",
+		Start:   &googlecalendar.EventDateTime{Date: "2026-04-14"},
+		End:     &googlecalendar.EventDateTime{Date: "2026-04-15"},
+		Status:  "confirmed",
+	}
+	event, ok := convertEvent(item, "primary")
+	if !ok {
+		t.Fatal("expected all-day event to convert successfully")
+	}
+	if !event.AllDay {
+		t.Error("expected AllDay to be true")
+	}
+	if event.Title != "Birthday" {
+		t.Errorf("Title = %q, want 'Birthday'", event.Title)
+	}
+	if event.Start.Format("2006-01-02") != "2026-04-14" {
+		t.Errorf("Start date = %q, want '2026-04-14'", event.Start.Format("2006-01-02"))
+	}
+	if event.End.Format("2006-01-02") != "2026-04-15" {
+		t.Errorf("End date = %q, want '2026-04-15'", event.End.Format("2006-01-02"))
+	}
+}
+
+func TestConvertEvent_AllDayNoEnd(t *testing.T) {
+	item := &googlecalendar.Event{
+		Id:      "2",
+		Summary: "Deadline",
 		Start:   &googlecalendar.EventDateTime{Date: "2026-04-14"},
 	}
-	_, ok := convertEvent(item, "primary")
-	if ok {
-		t.Error("expected all-day event to be skipped")
+	event, ok := convertEvent(item, "primary")
+	if !ok {
+		t.Fatal("expected all-day event without end to convert")
+	}
+	if !event.AllDay {
+		t.Error("expected AllDay to be true")
+	}
+	if event.End.Format("2006-01-02") != "2026-04-15" {
+		t.Errorf("End should default to next day, got %q", event.End.Format("2006-01-02"))
+	}
+}
+
+func TestConvertEvent_AllDayMultiDay(t *testing.T) {
+	item := &googlecalendar.Event{
+		Id:      "3",
+		Summary: "Vacation",
+		Start:   &googlecalendar.EventDateTime{Date: "2026-04-14"},
+		End:     &googlecalendar.EventDateTime{Date: "2026-04-18"},
+	}
+	event, ok := convertEvent(item, "primary")
+	if !ok {
+		t.Fatal("expected multi-day event to convert")
+	}
+	if event.End.Format("2006-01-02") != "2026-04-18" {
+		t.Errorf("End = %q, want '2026-04-18'", event.End.Format("2006-01-02"))
 	}
 }
 
@@ -172,6 +220,9 @@ func TestConvertEvent_ValidEvent(t *testing.T) {
 	}
 	if event.Organizer != "boss@co.com" {
 		t.Errorf("Organizer = %q, want 'boss@co.com'", event.Organizer)
+	}
+	if event.AllDay {
+		t.Error("expected AllDay to be false for timed event")
 	}
 	if event.Calendar != "primary" {
 		t.Errorf("Calendar = %q, want 'primary'", event.Calendar)

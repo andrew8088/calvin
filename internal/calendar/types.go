@@ -7,6 +7,7 @@ type Event struct {
 	Title           string     `json:"title"`
 	Start           time.Time  `json:"start"`
 	End             time.Time  `json:"end"`
+	AllDay          bool       `json:"all_day"`
 	Location        string     `json:"location"`
 	Description     string     `json:"description"`
 	MeetingLink     string     `json:"meeting_link"`
@@ -43,6 +44,7 @@ type HookPayload struct {
 	Title           string     `json:"title"`
 	Start           string     `json:"start"`
 	End             string     `json:"end"`
+	AllDay          bool       `json:"all_day"`
 	Location        string     `json:"location"`
 	Description     string     `json:"description"`
 	MeetingLink     *string    `json:"meeting_link"`
@@ -65,12 +67,20 @@ type Adjacent struct {
 }
 
 func EventToPayload(e Event, hookType string, prev, next *Event) HookPayload {
+	startStr := e.Start.Format(time.RFC3339)
+	endStr := e.End.Format(time.RFC3339)
+	if e.AllDay {
+		startStr = e.Start.Format("2006-01-02")
+		endStr = e.End.Format("2006-01-02")
+	}
+
 	p := HookPayload{
 		SchemaVersion:   1,
 		ID:              e.ID,
 		Title:           e.Title,
-		Start:           e.Start.Format(time.RFC3339),
-		End:             e.End.Format(time.RFC3339),
+		Start:           startStr,
+		End:             endStr,
+		AllDay:          e.AllDay,
 		Location:        e.Location,
 		Description:     e.Description,
 		MeetingProvider: e.MeetingProvider,

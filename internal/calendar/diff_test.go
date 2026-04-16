@@ -253,3 +253,27 @@ func TestEventToPayload_WithAdjacent(t *testing.T) {
 		t.Errorf("expected next ID '3', got %q", p.NextEvent.ID)
 	}
 }
+
+func TestEventToPayload_AllDay(t *testing.T) {
+	start := time.Date(2026, 4, 14, 0, 0, 0, 0, time.Local)
+	e := Event{
+		ID:     "bday-1",
+		Title:  "Birthday",
+		Start:  start,
+		End:    start.AddDate(0, 0, 1),
+		AllDay: true,
+		Status: "confirmed",
+	}
+
+	p := EventToPayload(e, "on-event-start", nil, nil)
+
+	if !p.AllDay {
+		t.Error("expected AllDay to be true in payload")
+	}
+	if p.Start != "2026-04-14" {
+		t.Errorf("expected date-only start '2026-04-14', got %q", p.Start)
+	}
+	if p.End != "2026-04-15" {
+		t.Errorf("expected date-only end '2026-04-15', got %q", p.End)
+	}
+}

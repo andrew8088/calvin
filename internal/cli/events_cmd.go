@@ -65,6 +65,9 @@ func runEvents() error {
 
 	for _, e := range events {
 		timeStr := e.Start.Local().Format("15:04")
+		if e.AllDay {
+			timeStr = "  ✦  "
+		}
 		title := truncate(e.Title, 40)
 
 		execs, _ := database.GetHookExecutions(e.ID)
@@ -161,7 +164,11 @@ func runEventDetail(eventID string) error {
 
 	fmt.Println()
 	fmt.Printf("  %s\n", bold(event.Title))
-	fmt.Printf("  %s - %s\n", dim(event.Start.Local().Format("Mon Jan 2 15:04")), dim(event.End.Local().Format("15:04")))
+	if event.AllDay {
+		fmt.Printf("  %s\n", dim(event.Start.Local().Format("Mon Jan 2")+" (all day)"))
+	} else {
+		fmt.Printf("  %s - %s\n", dim(event.Start.Local().Format("Mon Jan 2 15:04")), dim(event.End.Local().Format("15:04")))
+	}
 	if event.MeetingLink != "" {
 		fmt.Printf("  %s\n", blue(event.MeetingLink))
 	}

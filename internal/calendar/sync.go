@@ -127,15 +127,35 @@ func (s *Syncer) CheckAPIAccess(ctx context.Context) error {
 }
 
 func convertEvent(item *googlecalendar.Event, calendarID string) (Event, bool) {
-	if item.Start == nil || item.Start.DateTime == "" {
+	if item.Start == nil {
 		return Event{}, false
 	}
 
-	start, err := time.Parse(time.RFC3339, item.Start.DateTime)
-	if err != nil {
+	var start, end time.Time
+	var allDay bool
+
+	if item.Start.DateTime != "" {
+		var err error
+		start, err = time.Parse(time.RFC3339, item.Start.DateTime)
+		if err != nil {
+			return Event{}, false
+		}
+		end, _ = time.Parse(time.RFC3339, item.End.DateTime)
+	} else if item.Start.Date != "" {
+		allDay = true
+		var err error
+		start, err = time.ParseInLocation("2006-01-02", item.Start.Date, time.Local)
+		if err != nil {
+			return Event{}, false
+		}
+		if item.End != nil && item.End.Date != "" {
+			end, _ = time.ParseInLocation("2006-01-02", item.End.Date, time.Local)
+		} else {
+			end = start.AddDate(0, 0, 1)
+		}
+	} else {
 		return Event{}, false
 	}
-	end, _ := time.Parse(time.RFC3339, item.End.DateTime)
 
 	var attendees []Attendee
 	for _, a := range item.Attendees {
@@ -163,6 +183,7 @@ func convertEvent(item *googlecalendar.Event, calendarID string) (Event, bool) {
 		Title:           item.Summary,
 		Start:           start,
 		End:             end,
+		AllDay:          allDay,
 		Location:        item.Location,
 		Description:     item.Description,
 		MeetingLink:     link,

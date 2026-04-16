@@ -86,6 +86,9 @@ func runWeek(now time.Time) error {
 
 		for _, e := range dayEvents {
 			timeStr := e.Start.Local().Format("15:04")
+			if e.AllDay {
+				timeStr = "  ✦  "
+			}
 			title := truncate(e.Title, 40)
 			fmt.Printf("    %s  %s\n", dim(timeStr), title)
 		}

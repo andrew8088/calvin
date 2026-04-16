@@ -149,6 +149,7 @@ func runHooksSchema() error {
 		"title":           "Weekly standup",
 		"start":           "2024-01-15T10:00:00-08:00",
 		"end":             "2024-01-15T10:30:00-08:00",
+		"all_day":         false,
 		"location":        "",
 		"description":     "Team sync",
 		"meeting_link":    "https://meet.google.com/abc-defg-hij",
@@ -183,6 +184,7 @@ func runHooksSchema() error {
 	fmt.Println()
 	fmt.Println("  Fields:")
 	fmt.Printf("    schema_version   %s\n", dim("always 1 (will increment on breaking changes)"))
+	fmt.Printf("    all_day          %s\n", dim("true for all-day events (start/end are date-only strings)"))
 	fmt.Printf("    meeting_link     %s\n", dim("null when no meeting link exists"))
 	fmt.Printf("    hook_type        %s\n", dim("before-event-start | on-event-start | on-event-end"))
 	fmt.Printf("    previous_event   %s\n", dim("null if this is the first event"))
