@@ -200,6 +200,29 @@ func (d *DB) ListEventsBetween(start, end time.Time) ([]calendar.Event, error) {
 	return events, err
 }
 
+func (d *DB) ListEventsOverlapping(start, end time.Time) ([]calendar.Event, error) {
+	var events []calendar.Event
+	err := sqlitex.ExecuteTransient(d.conn, `
+		SELECT id, title, start_time, end_time, all_day, location, description,
+			meeting_link, meeting_provider, attendees_json, organizer, calendar_id,
+			status, attendees_hash
+		FROM events
+		WHERE end_time > ? AND start_time < ? AND status != 'cancelled'
+		ORDER BY start_time ASC
+	`, &sqlitex.ExecOptions{
+		Args: []any{start.Format(time.RFC3339), end.Format(time.RFC3339)},
+		ResultFunc: func(stmt *sqlite.Stmt) error {
+			e, err := scanEvent(stmt)
+			if err != nil {
+				return err
+			}
+			events = append(events, e)
+			return nil
+		},
+	})
+	return events, err
+}
+
 func (d *DB) DeleteStaleSyncGeneration(currentGen int64) ([]string, error) {
 	var deleted []string
 	err := sqlitex.ExecuteTransient(d.conn, `

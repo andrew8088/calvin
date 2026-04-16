@@ -61,6 +61,8 @@ calvin status        Show daemon health dashboard
 calvin next          Show next upcoming event with countdown
 calvin events        List today's events
 calvin events <id>   Show event detail with hook execution log
+calvin week          Show the next 7 days of events
+calvin free          Show today's free time between meetings
 calvin hooks list    List all discovered hooks
 calvin hooks new     Create a new hook from template
 calvin hooks schema  Print the JSON input schema
@@ -70,7 +72,9 @@ calvin logs          Show daemon logs (--hook, --level, --event filters)
 calvin version       Print version
 ```
 
-Add `--json` to `events`, `next`, or `status` for machine-readable output.
+Add `--json` to `events`, `next`, `week`, `free`, or `status` for machine-readable output.
+
+`calvin free` prints one free slot per line as `start<TAB>end<TAB>duration_seconds`, using local RFC3339 timestamps.
 
 ## Creating hooks
 

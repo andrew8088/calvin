@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `calvin free` to print today's free time between cached meetings in a pipe-friendly format, with `--json` support.
+
+### Docs
+
+- Updated the command list to include `calvin week` and `calvin free`, and corrected the documented `--json` coverage.
+
 ## v0.4.0 — 2026-04-15
 
 ### Breaking

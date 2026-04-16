@@ -207,6 +207,100 @@ func TestListEventsBetween_Empty(t *testing.T) {
 	}
 }
 
+func TestListEventsOverlapping_IncludesCarryoverAndOrdersByStart(t *testing.T) {
+	d := openTestDB(t)
+
+	windowStart := time.Date(2026, 4, 14, 0, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.Add(24 * time.Hour)
+
+	carryover := testEvent("carryover")
+	carryover.Start = windowStart.Add(-30 * time.Minute)
+	carryover.End = windowStart.Add(30 * time.Minute)
+	d.UpsertEvent(carryover, 1)
+
+	morning := testEvent("morning")
+	morning.Start = windowStart.Add(9 * time.Hour)
+	morning.End = morning.Start.Add(time.Hour)
+	d.UpsertEvent(morning, 1)
+
+	endsAtWindowStart := testEvent("ends-at-start")
+	endsAtWindowStart.Start = windowStart.Add(-2 * time.Hour)
+	endsAtWindowStart.End = windowStart
+	d.UpsertEvent(endsAtWindowStart, 1)
+
+	startsAtWindowEnd := testEvent("starts-at-end")
+	startsAtWindowEnd.Start = windowEnd
+	startsAtWindowEnd.End = windowEnd.Add(time.Hour)
+	d.UpsertEvent(startsAtWindowEnd, 1)
+
+	events, err := d.ListEventsOverlapping(windowStart, windowEnd)
+	if err != nil {
+		t.Fatalf("ListEventsOverlapping: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected 2 overlapping events, got %d", len(events))
+	}
+	if events[0].ID != "carryover" {
+		t.Fatalf("expected first event to be carryover, got %q", events[0].ID)
+	}
+	if events[1].ID != "morning" {
+		t.Fatalf("expected second event to be morning, got %q", events[1].ID)
+	}
+}
+
+func TestListEventsOverlapping_ExcludesCancelled(t *testing.T) {
+	d := openTestDB(t)
+
+	windowStart := time.Date(2026, 4, 14, 0, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.Add(24 * time.Hour)
+
+	active := testEvent("active")
+	active.Start = windowStart.Add(10 * time.Hour)
+	active.End = active.Start.Add(time.Hour)
+	d.UpsertEvent(active, 1)
+
+	cancelled := testEvent("cancelled")
+	cancelled.Start = windowStart.Add(11 * time.Hour)
+	cancelled.End = cancelled.Start.Add(time.Hour)
+	cancelled.Status = "cancelled"
+	d.UpsertEvent(cancelled, 1)
+
+	events, err := d.ListEventsOverlapping(windowStart, windowEnd)
+	if err != nil {
+		t.Fatalf("ListEventsOverlapping: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 overlapping event, got %d", len(events))
+	}
+	if events[0].ID != "active" {
+		t.Fatalf("expected active event, got %q", events[0].ID)
+	}
+}
+
+func TestListEventsOverlapping_IncludesAllDay(t *testing.T) {
+	d := openTestDB(t)
+
+	windowStart := time.Date(2026, 4, 14, 0, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.Add(24 * time.Hour)
+
+	allDay := testEvent("all-day")
+	allDay.AllDay = true
+	allDay.Start = windowStart
+	allDay.End = windowEnd
+	d.UpsertEvent(allDay, 1)
+
+	events, err := d.ListEventsOverlapping(windowStart, windowEnd)
+	if err != nil {
+		t.Fatalf("ListEventsOverlapping: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 overlapping event, got %d", len(events))
+	}
+	if !events[0].AllDay {
+		t.Fatal("expected all-day event to be preserved")
+	}
+}
+
 func TestListUpcomingEvents(t *testing.T) {
 	d := openTestDB(t)
 
