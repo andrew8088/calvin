@@ -41,6 +41,7 @@ Hooks receive event data as JSON on stdin:
 
 ```bash
 #!/usr/bin/env bash
+calvin match --calendar "primary" --title "*standup*" || exit 0
 INPUT=$(cat /dev/stdin)
 TITLE=$(echo "$INPUT" | jq -r '.title')
 LINK=$(echo "$INPUT" | jq -r '.meeting_link // empty')
@@ -66,6 +67,8 @@ calvin free          Show today's free time between meetings
 calvin hooks list    List all discovered hooks
 calvin hooks new     Create a new hook from template
 calvin hooks schema  Print the JSON input schema
+calvin match         Assert hook event matches filters
+calvin ignore        Assert hook event matches ignore filters
 calvin test <hook>   Test a hook with real or mock event data
 calvin doctor        Run health checks
 calvin logs          Show daemon logs (--hook, --level, --event filters)
@@ -85,6 +88,22 @@ calvin hooks new before-event-start my-notifier
 This creates a hook at `~/.config/calvin/hooks/before-event-start/my-notifier` with a starter template. Edit it, and Calvin picks it up on the next sync cycle (no restart needed).
 
 Hooks must be executable (`chmod +x`). Calvin discovers hooks by scanning the hooks directory every sync cycle.
+
+### In-script filtering (no extra config)
+
+Use `calvin match` and `calvin ignore` at the top of your hook script:
+
+```bash
+#!/usr/bin/env bash
+calvin match --calendar "Work*" --title "*1:1*" || exit 0
+calvin ignore --title "*OOO*" && exit 0
+
+INPUT=$(cat /dev/stdin)
+TITLE=$(echo "$INPUT" | jq -r '.title')
+echo "Running for: $TITLE"
+```
+
+Both commands infer event context automatically inside hooks through `CALVIN_EVENT_FILE`. They return exit code `0` when matched, `1` when not matched, and `2` for usage/context errors.
 
 ## Example hooks
 
@@ -189,11 +208,10 @@ id = "primary"
 id = "personal@gmail.com"
 ```
 
-Each hook receives a `calendar` field in its JSON payload, so hooks can filter by calendar:
+Each hook receives a `calendar` field in its JSON payload, and can filter by calendar without jq guards:
 
 ```bash
-CALENDAR=$(echo "$INPUT" | jq -r '.calendar')
-[ "$CALENDAR" != "primary" ] && exit 0
+calvin match --calendar "primary" || exit 0
 ```
 
 ## File locations

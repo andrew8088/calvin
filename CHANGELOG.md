@@ -5,6 +5,7 @@
 ### Added
 
 - `calvin free` to print today's free time between cached meetings in a pipe-friendly format, with `--json` support.
+- `calvin match` and `calvin ignore` commands for in-script hook filtering using inferred event context (`CALVIN_EVENT_FILE`).
 
 ### Docs
 
