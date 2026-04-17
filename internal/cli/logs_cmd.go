@@ -2,8 +2,10 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -14,20 +16,23 @@ import (
 )
 
 var (
-	logsHook  string
-	logsEvent string
-	logsType  string
-	logsLevel string
-	logsSince string
-	logsLines int
+	logsHook   string
+	logsEvent  string
+	logsType   string
+	logsLevel  string
+	logsSince  string
+	logsLines  int
+	logsFollow bool
 )
+
+const logsFollowPollInterval = 100 * time.Millisecond
 
 var logsCmd = &cobra.Command{
 	Use:     "logs",
 	Short:   "Show Calvin daemon logs",
-	Example: "  calvin logs\n  calvin logs --hook my-hook\n  calvin logs --level error\n  calvin logs -n 50",
+	Example: "  calvin logs\n  calvin logs --hook my-hook\n  calvin logs --level error\n  calvin logs -n 50\n  calvin logs -f",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runLogs()
+		return runLogs(cmd.Context())
 	},
 }
 
@@ -38,9 +43,20 @@ func init() {
 	logsCmd.Flags().StringVar(&logsLevel, "level", "", "Filter by log level (info, warn, error)")
 	logsCmd.Flags().StringVar(&logsSince, "since", "", "Filter entries since timestamp")
 	logsCmd.Flags().IntVarP(&logsLines, "lines", "n", 100, "Number of lines to show")
+	logsCmd.Flags().BoolVarP(&logsFollow, "follow", "f", false, "Follow new matching log entries")
 }
 
-func runLogs() error {
+func runLogs(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if wantsJSON() && logsFollow {
+		return newExitError(2, "logs", "unsupported_follow_mode", "logs --json does not support --follow", nil, nil)
+	}
+	if err := validateSinceTimestamp(logsSince); err != nil {
+		return newExitError(2, "logs", "invalid_since", err.Error(), nil, err)
+	}
+
 	logPath := config.LogPath()
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {
 		if wantsJSON() {
@@ -52,35 +68,19 @@ func runLogs() error {
 		return nil
 	}
 
-	f, err := os.Open(logPath)
+	entries, offset, err := readLogEntriesFromOffset(logPath, 0)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-
-	var entries []logging.Entry
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-		var entry logging.Entry
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			continue
-		}
-		if !matchesFilter(entry) {
-			continue
-		}
-		entries = append(entries, entry)
-	}
-	entries, err = filterLogsSince(entries, logsSince)
+	entries, err = filterMatchingEntries(entries)
 	if err != nil {
 		return newExitError(2, "logs", "invalid_since", err.Error(), nil, err)
 	}
 
 	if len(entries) == 0 {
+		if logsFollow {
+			return followLogs(ctx, logPath, offset)
+		}
 		if wantsJSON() {
 			return writeCommandJSON("logs", map[string]any{"entries": []logging.Entry{}})
 		}
@@ -103,7 +103,102 @@ func runLogs() error {
 	}
 	fmt.Println()
 
+	if logsFollow {
+		return followLogs(ctx, logPath, offset)
+	}
+
 	return nil
+}
+
+func readLogEntriesFromOffset(path string, offset int64) ([]logging.Entry, int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, offset, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, offset, err
+	}
+	if info.Size() < offset {
+		offset = 0
+	}
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return nil, offset, err
+	}
+
+	entries, err := scanLogEntries(f)
+	if err != nil {
+		return nil, offset, err
+	}
+	nextOffset, err := f.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return nil, offset, err
+	}
+
+	return entries, nextOffset, nil
+}
+
+func scanLogEntries(r io.Reader) ([]logging.Entry, error) {
+	var entries []logging.Entry
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		var entry logging.Entry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func filterMatchingEntries(entries []logging.Entry) ([]logging.Entry, error) {
+	entries, err := filterLogsSince(entries, logsSince)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]logging.Entry, 0, len(entries))
+	for _, entry := range entries {
+		if !matchesFilter(entry) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered, nil
+}
+
+func followLogs(ctx context.Context, logPath string, offset int64) error {
+	ticker := time.NewTicker(logsFollowPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			entries, nextOffset, err := readLogEntriesFromOffset(logPath, offset)
+			if err != nil {
+				return err
+			}
+			offset = nextOffset
+			entries, err = filterMatchingEntries(entries)
+			if err != nil {
+				return newExitError(2, "logs", "invalid_since", err.Error(), nil, err)
+			}
+			for _, entry := range entries {
+				printLogEntry(entry)
+			}
+		}
+	}
 }
 
 func matchesFilter(e logging.Entry) bool {
