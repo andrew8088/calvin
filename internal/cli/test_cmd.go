@@ -19,9 +19,9 @@ import (
 var testEventID string
 
 var testCmd = &cobra.Command{
-	Use:   "test <hook-name>",
-	Short: "Test a hook with real or mock event data",
-	Args:  cobra.ExactArgs(1),
+	Use:     "test <hook-name>",
+	Short:   "Test a hook with real or mock event data",
+	Args:    cobra.ExactArgs(1),
 	Example: "  calvin test example-notify\n  calvin test my-hook --event abc123",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runTest(args[0])
@@ -38,7 +38,7 @@ func runTest(hookName string) error {
 		return err
 	}
 
-	payload, err := buildTestPayload(hookType)
+	payload, payloadSource, err := buildTestPayload(hookType)
 	if err != nil {
 		return err
 	}
@@ -48,10 +48,12 @@ func runTest(hookName string) error {
 		return err
 	}
 
-	fmt.Println()
-	fmt.Printf("  %s Testing %s/%s\n", bold("▶"), hookType, hookName)
-	fmt.Printf("  Event: %s\n", dim(payload.Title))
-	fmt.Println()
+	if !wantsJSON() {
+		fmt.Println()
+		fmt.Printf("  %s Testing %s/%s\n", bold("▶"), hookType, hookName)
+		fmt.Printf("  Event: %s\n", dim(payload.Title))
+		fmt.Println()
+	}
 
 	stdout, stderr, exitCode, err := hooks.RunTest(hookPath, payloadBytes)
 	if err != nil {
@@ -61,6 +63,19 @@ func runTest(hookName string) error {
 			fmt.Sprintf("Check permissions: ls -la %s", hookPath),
 		)
 		return err
+	}
+
+	if wantsJSON() {
+		return writeCommandJSON("test", map[string]any{
+			"hook_name":      hookName,
+			"hook_type":      hookType,
+			"payload_source": payloadSource,
+			"event_title":    payload.Title,
+			"stdout":         stdout,
+			"stderr":         stderr,
+			"exit_code":      exitCode,
+			"success":        exitCode == 0,
+		})
 	}
 
 	if stdout != "" {
@@ -116,19 +131,20 @@ func findHook(name string) (string, string, error) {
 	return "", "", fmt.Errorf("hook not found: %s", name)
 }
 
-func buildTestPayload(hookType string) (calendar.HookPayload, error) {
+func buildTestPayload(hookType string) (calendar.HookPayload, string, error) {
 	if testEventID != "" {
-		return payloadFromDB(testEventID, hookType)
+		payload, err := payloadFromDB(testEventID, hookType)
+		return payload, "cache", err
 	}
 
 	if auth.HasToken() {
 		payload, err := payloadFromCalendar(hookType)
 		if err == nil {
-			return payload, nil
+			return payload, "calendar", nil
 		}
 	}
 
-	return mockPayload(hookType), nil
+	return mockPayload(hookType), "mock", nil
 }
 
 func payloadFromDB(eventID, hookType string) (calendar.HookPayload, error) {
@@ -187,12 +203,16 @@ func payloadFromCalendar(hookType string) (calendar.HookPayload, error) {
 		return calendar.HookPayload{}, fmt.Errorf("no upcoming events")
 	}
 
-	fmt.Printf("  %s Using real event from your calendar\n", dim("ℹ"))
+	if !wantsJSON() {
+		fmt.Printf("  %s Using real event from your calendar\n", dim("ℹ"))
+	}
 	return calendar.EventToPayload(*event, hookType, nil, nil), nil
 }
 
 func mockPayload(hookType string) calendar.HookPayload {
-	fmt.Printf("  %s Using mock event data\n", dim("ℹ"))
+	if !wantsJSON() {
+		fmt.Printf("  %s Using mock event data\n", dim("ℹ"))
+	}
 	now := time.Now()
 	start := now.Add(5 * time.Minute)
 	end := start.Add(30 * time.Minute)

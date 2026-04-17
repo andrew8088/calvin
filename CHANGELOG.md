@@ -2,13 +2,21 @@
 
 ## Unreleased
 
+### Breaking
+
+- **Unified JSON contract.** Agent-relevant commands now return a consistent top-level JSON envelope under `--json`, instead of the older mix of raw arrays, raw objects, and text-only responses. If you were parsing the previous raw `--json` shapes from `events`, `next`, `week`, `free`, or `status`, update your automation to read the new `{ "ok", "command", "data" }` structure.
+
 ### Added
 
 - `calvin free` to print today's free time between cached meetings in a pipe-friendly format, with `--json` support.
+- `calvin match` and `calvin ignore` commands for in-script hook filtering using inferred event context (`CALVIN_EVENT_FILE`).
+- `calvin commands`, `calvin describe`, and `calvin schema` for AI-first runtime discovery.
+- `CALVIN_OUTPUT=json` and `--output json` to make structured output explicit.
+- Structured JSON stderr errors for JSON-mode command, usage, and parse failures.
 
 ### Docs
 
-- Updated the command list to include `calvin week` and `calvin free`, and corrected the documented `--json` coverage.
+- Updated the command list to include `calvin commands`, `calvin describe`, and `calvin schema`, and documented the new JSON contract.
 
 ## v0.4.0 — 2026-04-15
 

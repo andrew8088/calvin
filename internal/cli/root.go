@@ -3,14 +3,17 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	appVersion = "dev"
-	appCommit  = "none"
-	jsonOutput bool
+	appVersion        = "dev"
+	appCommit         = "none"
+	jsonOutput        bool
+	outputFlag        string
+	currentOutputMode = outputModeText
 )
 
 func SetVersion(version, commit string) {
@@ -19,7 +22,24 @@ func SetVersion(version, commit string) {
 }
 
 func Execute() error {
-	return rootCmd.Execute()
+	args := os.Args[1:]
+	jsonIntent := rawOutputMode(args, os.Getenv("CALVIN_OUTPUT")) == outputModeJSON
+	rootCmd.SilenceErrors = jsonIntent
+	rootCmd.SilenceUsage = jsonIntent
+
+	err := rootCmd.Execute()
+	if err == nil {
+		return nil
+	}
+
+	exitErr := wrapCLIError(err, args)
+	if !jsonIntent {
+		return exitErr
+	}
+	if writeErr := writeJSONError(os.Stderr, exitErr.Result); writeErr != nil {
+		return fmt.Errorf("write json error: %w", writeErr)
+	}
+	return exitErr
 }
 
 var rootCmd = &cobra.Command{
@@ -34,6 +54,15 @@ Quick start:
   calvin auth          Authenticate with Google Calendar
   calvin test example-notify   Test an example hook
   calvin start --background    Start the daemon`,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		currentOutputMode = resolveOutputMode(outputFlag, jsonOutput, os.Getenv("CALVIN_OUTPUT"))
+		if err := validateOutputMode(outputFlag); err != nil {
+			return newExitError(2, cmd.CommandPath(), "invalid_output_mode", err.Error(), map[string]any{
+				"valid_output_modes": []string{string(outputModeText), string(outputModeJSON)},
+			}, err)
+		}
+		return nil
+	},
 }
 
 func printJSON(v any) error {
@@ -47,6 +76,10 @@ func printJSON(v any) error {
 
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
+	rootCmd.PersistentFlags().StringVar(&outputFlag, "output", "", "Output format: text or json")
+	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		return newExitError(2, cmd.CommandPath(), "invalid_flag", err.Error(), nil, err)
+	})
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(startCmd)
@@ -55,6 +88,8 @@ func init() {
 	rootCmd.AddCommand(eventsCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(hooksCmd)
+	rootCmd.AddCommand(matchCmd)
+	rootCmd.AddCommand(ignoreCmd)
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(logsCmd)

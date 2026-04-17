@@ -85,19 +85,25 @@ func bold(s string) string {
 	return colorBold + s + colorReset
 }
 
-func symPass() string  { return green("✓") }
-func symFail() string  { return red("✗") }
-func symWarn() string  { return yellow("△") }
-func symRun() string   { return green("●") }
-func symStop() string  { return dim("○") }
+func symPass() string { return green("✓") }
+func symFail() string { return red("✗") }
+func symWarn() string { return yellow("△") }
+func symRun() string  { return green("●") }
+func symStop() string { return dim("○") }
 
 func errMsg(what, why, fix string) {
+	if wantsJSON() {
+		return
+	}
 	fmt.Fprintf(os.Stderr, "  %s %s\n", symFail(), what)
 	fmt.Fprintf(os.Stderr, "           %s\n", why)
 	fmt.Fprintf(os.Stderr, "           Fix: %s\n", cyan(fix))
 }
 
 func warnMsg(what, why, fix string) {
+	if wantsJSON() {
+		return
+	}
 	fmt.Fprintf(os.Stderr, "  %s %s\n", symWarn(), what)
 	fmt.Fprintf(os.Stderr, "           %s\n", why)
 	if fix != "" {

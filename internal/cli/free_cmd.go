@@ -24,6 +24,9 @@ var freeCmd = &cobra.Command{
 func runFree(now time.Time) error {
 	dbPath := config.DBPath()
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		if wantsJSON() {
+			return writeCommandJSON("free", map[string]any{"slots": []calendar.FreeSlot{}}, "no cached events")
+		}
 		fmt.Println("  No cached events.")
 		fmt.Printf("  Run: %s\n", cyan("calvin start"))
 		return nil
@@ -35,8 +38,13 @@ func runFree(now time.Time) error {
 	}
 	defer database.Close()
 
+	warnings := []string{}
 	if _, err := os.Stat(config.PIDPath()); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "  %s daemon not running, showing cached events\n\n", symWarn())
+		if wantsJSON() {
+			warnings = append(warnings, "daemon not running, showing cached events")
+		} else {
+			fmt.Fprintf(os.Stderr, "  %s daemon not running, showing cached events\n\n", symWarn())
+		}
 	}
 
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -48,7 +56,7 @@ func runFree(now time.Time) error {
 	}
 
 	slots := calendar.FreeSlotsForWindow(start, end, events)
-	if jsonOutput {
+	if wantsJSON() {
 		type freeSlotJSON struct {
 			Start           string `json:"start"`
 			End             string `json:"end"`
@@ -62,7 +70,7 @@ func runFree(now time.Time) error {
 				DurationSeconds: slot.DurationSeconds,
 			})
 		}
-		return printJSON(payload)
+		return writeCommandJSON("free", map[string]any{"slots": payload}, warnings...)
 	}
 
 	if len(slots) == 0 {

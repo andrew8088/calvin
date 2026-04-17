@@ -23,8 +23,8 @@ import (
 var startBackground bool
 
 var startCmd = &cobra.Command{
-	Use:   "start",
-	Short: "Start the Calvin daemon",
+	Use:     "start",
+	Short:   "Start the Calvin daemon",
 	Example: "  calvin start\n  calvin start --background",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runStart()
@@ -36,6 +36,10 @@ func init() {
 }
 
 func runStart() error {
+	if wantsJSON() {
+		return newExitError(1, "start", "unsupported_foreground_mode", "start --json is not supported yet", nil, nil)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		errMsg("Failed to load config", err.Error(), "calvin init")

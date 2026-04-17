@@ -11,8 +11,8 @@ import (
 )
 
 var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Scaffold config directories and example hooks",
+	Use:     "init",
+	Short:   "Scaffold config directories and example hooks",
 	Example: "  calvin init",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runInit()
@@ -67,8 +67,26 @@ func runInit() error {
 	}
 
 	if allExisted {
+		if wantsJSON() {
+			return writeCommandJSON("init", map[string]any{
+				"created":               false,
+				"already_initialized":   true,
+				"example_hooks_created": examplesCreated,
+			})
+		}
 		fmt.Println("  Already initialized. All directories and files exist.")
 		return nil
+	}
+
+	if wantsJSON() {
+		return writeCommandJSON("init", map[string]any{
+			"created":               true,
+			"already_initialized":   false,
+			"example_hooks_created": examplesCreated,
+			"config_dir":            config.ConfigDir(),
+			"data_dir":              config.DataDir(),
+			"state_dir":             config.StateDir(),
+		})
 	}
 
 	fmt.Println(bold("  Calvin initialized!"))
@@ -121,6 +139,8 @@ var exampleHooks = map[string]string{
 # Hook type: before-event-start (fires before the event starts)
 # Run: calvin hooks schema  to see all available JSON fields
 
+calvin match --calendar "primary" || exit 0
+
 INPUT=$(cat /dev/stdin)
 TITLE=$(echo "$INPUT" | jq -r '.title')
 START=$(echo "$INPUT" | jq -r '.start')
@@ -138,6 +158,8 @@ echo "Notified: $TITLE at $START"
 	"on-event-start/example-open-link": `#!/usr/bin/env bash
 # Example Calvin hook: auto-open meeting links when events start
 # Hook type: on-event-start (fires when the event begins)
+
+calvin ignore --title "*OOO*" && exit 0
 
 INPUT=$(cat /dev/stdin)
 LINK=$(echo "$INPUT" | jq -r '.meeting_link // empty')

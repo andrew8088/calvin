@@ -84,6 +84,16 @@ func (e *Executor) FireHooks(ctx context.Context, event calendar.Event, hookType
 func (e *Executor) executeOne(ctx context.Context, hook Hook, hookType, eventID string, payload []byte) Result {
 	log := logging.Get()
 
+	eventFile := ""
+	cleanup := func() {}
+	if path, done, err := WriteEventContextFile(payload); err != nil {
+		log.Warn("hooks", fmt.Sprintf("failed to create event context file for %s: %v", hook.Name, err))
+	} else {
+		eventFile = path
+		cleanup = done
+	}
+	defer cleanup()
+
 	select {
 	case e.semaphore <- struct{}{}:
 		defer func() { <-e.semaphore }()
@@ -121,7 +131,7 @@ func (e *Executor) executeOne(ctx context.Context, hook Hook, hookType, eventID 
 	cmd := exec.CommandContext(ctx, hook.Path)
 	cmd.Stdin = bytes.NewReader(payload)
 	cmd.Dir = config.ConfigDir()
-	cmd.Env = buildEnv(eventID, hookType)
+	cmd.Env = buildEnv(eventID, hookType, eventFile)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
@@ -181,7 +191,7 @@ func (e *Executor) executeOne(ctx context.Context, hook Hook, hookType, eventID 
 	return result
 }
 
-func buildEnv(eventID, hookType string) []string {
+func buildEnv(eventID, hookType, eventFile string) []string {
 	env := os.Environ()
 	env = append(env,
 		"CALVIN_EVENT_ID="+eventID,
@@ -189,6 +199,9 @@ func buildEnv(eventID, hookType string) []string {
 		"CALVIN_CONFIG_DIR="+config.ConfigDir(),
 		"CALVIN_DATA_DIR="+config.DataDir(),
 	)
+	if eventFile != "" {
+		env = append(env, "CALVIN_EVENT_FILE="+eventFile)
+	}
 
 	hasPath := false
 	for i, e := range env {
@@ -232,16 +245,22 @@ func (w *limitedWriter) Write(p []byte) (n int, err error) {
 }
 
 func RunTest(hookPath string, payload []byte) (string, string, int, error) {
+	eventFile, cleanup, err := WriteEventContextFile(payload)
+	if err != nil {
+		return "", "", -1, fmt.Errorf("create event context file: %w", err)
+	}
+	defer cleanup()
+
 	cmd := exec.Command(hookPath)
 	cmd.Stdin = bytes.NewReader(payload)
 	cmd.Dir = config.ConfigDir()
-	cmd.Env = buildEnv("test-event", "test")
+	cmd.Env = buildEnv("test-event", "test", eventFile)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 
-	err := cmd.Run()
+	err = cmd.Run()
 	exitCode := 0
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {

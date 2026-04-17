@@ -23,23 +23,61 @@ var doctorCmd = &cobra.Command{
 	},
 }
 
+type doctorCheck struct {
+	Name  string `json:"name"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+type doctorReport struct {
+	Checks []doctorCheck `json:"checks"`
+	Passed int           `json:"passed"`
+	Failed int           `json:"failed"`
+}
+
 func runDoctor() error {
+	report := collectDoctorChecks()
+	if wantsJSON() {
+		return writeCommandJSON("doctor", report)
+	}
+
 	fmt.Println()
 	fmt.Printf("  %s\n", bold("Calvin Doctor"))
 	fmt.Println()
 
+	for _, check := range report.Checks {
+		if check.OK {
+			fmt.Printf("  %s %s\n", symPass(), check.Name)
+			continue
+		}
+		fmt.Printf("  %s %s\n", symFail(), check.Name)
+		fmt.Printf("      %s\n", red(check.Error))
+	}
+
+	fmt.Println()
+	if report.Failed == 0 {
+		fmt.Printf("  %s All %d checks passed\n", symPass(), report.Passed)
+	} else {
+		fmt.Printf("  %d passed, %d failed\n", report.Passed, report.Failed)
+	}
+	fmt.Println()
+
+	return nil
+}
+
+func collectDoctorChecks() doctorReport {
+	checks := make([]doctorCheck, 0, 8)
 	passed := 0
 	failed := 0
 
 	check := func(name string, fn func() error) {
 		if err := fn(); err != nil {
-			fmt.Printf("  %s %s\n", symFail(), name)
-			fmt.Printf("      %s\n", red(err.Error()))
+			checks = append(checks, doctorCheck{Name: name, OK: false, Error: err.Error()})
 			failed++
-		} else {
-			fmt.Printf("  %s %s\n", symPass(), name)
-			passed++
+			return
 		}
+		checks = append(checks, doctorCheck{Name: name, OK: true})
+		passed++
 	}
 
 	check("Config directory exists", func() error {
@@ -133,13 +171,5 @@ func runDoctor() error {
 		return nil
 	})
 
-	fmt.Println()
-	if failed == 0 {
-		fmt.Printf("  %s All %d checks passed\n", symPass(), passed)
-	} else {
-		fmt.Printf("  %d passed, %d failed\n", passed, failed)
-	}
-	fmt.Println()
-
-	return nil
+	return doctorReport{Checks: checks, Passed: passed, Failed: failed}
 }

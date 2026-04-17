@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode"
 
 	"github.com/andrew8088/calvin/internal/config"
 	"github.com/andrew8088/calvin/internal/hooks"
@@ -12,8 +14,8 @@ import (
 )
 
 var hooksCmd = &cobra.Command{
-	Use:   "hooks",
-	Short: "Manage Calvin hooks",
+	Use:     "hooks",
+	Short:   "Manage Calvin hooks",
 	Example: "  calvin hooks list\n  calvin hooks new before-event-start my-hook\n  calvin hooks schema",
 }
 
@@ -26,9 +28,9 @@ var hooksListCmd = &cobra.Command{
 }
 
 var hooksNewCmd = &cobra.Command{
-	Use:   "new <type> <name>",
-	Short: "Create a new hook from template",
-	Args:  cobra.ExactArgs(2),
+	Use:     "new <type> <name>",
+	Short:   "Create a new hook from template",
+	Args:    cobra.ExactArgs(2),
 	Example: "  calvin hooks new before-event-start my-notifier\n  calvin hooks new on-event-start open-zoom",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runHooksNew(args[0], args[1])
@@ -61,10 +63,26 @@ func runHooksList() error {
 	}
 
 	if total == 0 {
+		if wantsJSON() {
+			return writeCommandJSON("hooks list", map[string]any{"hooks": map[string]any{}})
+		}
 		fmt.Println("  No hooks found.")
 		fmt.Printf("  Hooks directory: %s\n", dim(config.HooksDir()))
 		fmt.Printf("  Create one: %s\n", cyan("calvin hooks new before-event-start my-hook"))
 		return nil
+	}
+
+	if wantsJSON() {
+		payload := map[string][]map[string]string{}
+		for _, hookType := range hooks.ValidTypes {
+			for _, h := range allHooks[hookType] {
+				payload[hookType] = append(payload[hookType], map[string]string{
+					"name": h.Name,
+					"path": h.Path,
+				})
+			}
+		}
+		return writeCommandJSON("hooks list", map[string]any{"hooks": payload})
 	}
 
 	fmt.Println()
@@ -85,6 +103,10 @@ func runHooksList() error {
 }
 
 func runHooksNew(hookType, name string) error {
+	if err := validateHookName(name); err != nil {
+		return err
+	}
+
 	valid := false
 	for _, t := range hooks.ValidTypes {
 		if hookType == t {
@@ -119,6 +141,9 @@ func runHooksNew(hookType, name string) error {
 	template := fmt.Sprintf(`#!/usr/bin/env bash
 # Calvin %s hook: %s
 # Receives event JSON on stdin. Run: calvin hooks schema
+# Optional guards:
+#   calvin match --calendar "primary" || exit 0
+#   calvin ignore --title "*OOO*" && exit 0
 
 EVENT=$(cat /dev/stdin)
 TITLE=$(echo "$EVENT" | jq -r '.title')
@@ -132,6 +157,14 @@ echo "Hook fired: $TITLE at $START"
 		return err
 	}
 
+	if wantsJSON() {
+		return writeCommandJSON("hooks new", map[string]any{
+			"hook_type": hookType,
+			"name":      name,
+			"path":      hookPath,
+		})
+	}
+
 	fmt.Printf("  %s Created %s/%s\n", symPass(), hookType, name)
 	fmt.Printf("  Path: %s\n", dim(hookPath))
 	fmt.Println()
@@ -142,26 +175,52 @@ echo "Hook fired: $TITLE at $START"
 	return nil
 }
 
+func validateHookName(name string) error {
+	if name == "" {
+		return fmt.Errorf("hook name cannot be empty")
+	}
+	if strings.Contains(name, "/") || strings.Contains(name, string(filepath.Separator)) || strings.Contains(name, "\\") {
+		return fmt.Errorf("hook name must be a single path segment: %s", name)
+	}
+	if name == "." || name == ".." || strings.Contains(name, "..") {
+		return fmt.Errorf("hook name cannot contain path traversal: %s", name)
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("hook name cannot contain control characters")
+		}
+	}
+	return nil
+}
+
 func runHooksSchema() error {
+	if wantsJSON() {
+		schema, err := namedSchema("hook-payload")
+		if err != nil {
+			return err
+		}
+		return printJSON(schema)
+	}
+
 	schema := map[string]any{
-		"schema_version":  1,
-		"id":              "abc123xyz",
-		"title":           "Weekly standup",
-		"start":           "2024-01-15T10:00:00-08:00",
-		"end":             "2024-01-15T10:30:00-08:00",
-		"all_day":         false,
-		"location":        "",
-		"description":     "Team sync",
-		"meeting_link":    "https://meet.google.com/abc-defg-hij",
+		"schema_version":   1,
+		"id":               "abc123xyz",
+		"title":            "Weekly standup",
+		"start":            "2024-01-15T10:00:00-08:00",
+		"end":              "2024-01-15T10:30:00-08:00",
+		"all_day":          false,
+		"location":         "",
+		"description":      "Team sync",
+		"meeting_link":     "https://meet.google.com/abc-defg-hij",
 		"meeting_provider": "google_meet",
 		"attendees": []map[string]string{
 			{"email": "alice@example.com", "name": "Alice", "response": "accepted"},
 			{"email": "bob@example.com", "name": "Bob", "response": "tentative"},
 		},
-		"organizer":  "alice@example.com",
-		"calendar":   "primary",
-		"status":     "confirmed",
-		"hook_type":  "before-event-start",
+		"organizer": "alice@example.com",
+		"calendar":  "primary",
+		"status":    "confirmed",
+		"hook_type": "before-event-start",
 		"previous_event": map[string]string{
 			"id": "prev123", "title": "Morning coffee", "start": "2024-01-15T09:00:00-08:00",
 			"end": "2024-01-15T09:30:00-08:00", "meeting_link": "",
@@ -191,6 +250,7 @@ func runHooksSchema() error {
 	fmt.Printf("    next_event       %s\n", dim("null if this is the last event"))
 	fmt.Println()
 	fmt.Printf("  Usage in bash: %s\n", dim("INPUT=$(cat /dev/stdin); TITLE=$(echo \"$INPUT\" | jq -r '.title')"))
+	fmt.Printf("  Filter in bash: %s\n", dim("calvin match --calendar \"primary\" || exit 0"))
 	fmt.Println()
 
 	return nil

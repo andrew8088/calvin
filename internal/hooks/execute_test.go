@@ -81,7 +81,7 @@ func TestLimitedWriter_ZeroMax(t *testing.T) {
 }
 
 func TestBuildEnv_ContainsCalvinVars(t *testing.T) {
-	env := buildEnv("evt-1", "before-event-start")
+	env := buildEnv("evt-1", "before-event-start", "")
 
 	found := map[string]bool{}
 	for _, e := range env {
@@ -99,7 +99,7 @@ func TestBuildEnv_ContainsCalvinVars(t *testing.T) {
 }
 
 func TestBuildEnv_EventIDValue(t *testing.T) {
-	env := buildEnv("my-event", "on-event-start")
+	env := buildEnv("my-event", "on-event-start", "")
 
 	for _, e := range env {
 		if e == "CALVIN_EVENT_ID=my-event" {
@@ -110,7 +110,7 @@ func TestBuildEnv_EventIDValue(t *testing.T) {
 }
 
 func TestBuildEnv_PathIncludes(t *testing.T) {
-	env := buildEnv("evt-1", "before-event-start")
+	env := buildEnv("evt-1", "before-event-start", "")
 
 	for _, e := range env {
 		if strings.HasPrefix(e, "PATH=") {
@@ -128,8 +128,20 @@ func TestBuildEnv_PathIncludes(t *testing.T) {
 }
 
 func TestBuildEnv_ConfigDirValue(t *testing.T) {
-	env := buildEnv("evt-1", "before-event-start")
+	env := buildEnv("evt-1", "before-event-start", "")
 	expected := "CALVIN_CONFIG_DIR=" + config.ConfigDir()
+
+	for _, e := range env {
+		if e == expected {
+			return
+		}
+	}
+	t.Errorf("expected %q in env", expected)
+}
+
+func TestBuildEnv_EventFileValue(t *testing.T) {
+	env := buildEnv("evt-1", "before-event-start", "/tmp/calvin-event.json")
+	expected := "CALVIN_EVENT_FILE=/tmp/calvin-event.json"
 
 	for _, e := range env {
 		if e == expected {

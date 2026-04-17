@@ -12,8 +12,8 @@ import (
 )
 
 var nextCmd = &cobra.Command{
-	Use:   "next",
-	Short: "Show next upcoming event with countdown",
+	Use:     "next",
+	Short:   "Show next upcoming event with countdown",
 	Example: "  calvin next",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runNext()
@@ -23,6 +23,9 @@ var nextCmd = &cobra.Command{
 func runNext() error {
 	dbPath := config.DBPath()
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		if wantsJSON() {
+			return writeCommandJSON("next", map[string]any{"event": nil})
+		}
 		fmt.Println("  No upcoming events today. Enjoy the quiet.")
 		return nil
 	}
@@ -39,8 +42,8 @@ func runNext() error {
 	}
 
 	if len(events) == 0 {
-		if jsonOutput {
-			return printJSON(nil)
+		if wantsJSON() {
+			return writeCommandJSON("next", map[string]any{"event": nil})
 		}
 		fmt.Println("  No upcoming events today. Enjoy the quiet.")
 		return nil
@@ -48,8 +51,8 @@ func runNext() error {
 
 	e := events[0]
 
-	if jsonOutput {
-		return printJSON(e)
+	if wantsJSON() {
+		return writeCommandJSON("next", map[string]any{"event": e})
 	}
 
 	fmt.Println()
