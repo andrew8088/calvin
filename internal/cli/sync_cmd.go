@@ -23,11 +23,25 @@ func runSync() error {
 		return err
 	}
 	if process == nil {
+		if wantsJSON() {
+			return writeCommandJSON("sync", map[string]any{
+				"running": false,
+				"signal":  "SIGUSR1",
+			})
+		}
 		return nil
 	}
 
 	if err := process.Signal(syscall.SIGUSR1); err != nil {
 		return fmt.Errorf("sending SIGUSR1 to PID %d: %w", pid, err)
+	}
+
+	if wantsJSON() {
+		return writeCommandJSON("sync", map[string]any{
+			"running": true,
+			"pid":     pid,
+			"signal":  "SIGUSR1",
+		})
 	}
 
 	fmt.Printf("  %s Sync triggered (PID: %d)\n", symPass(), pid)

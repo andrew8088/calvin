@@ -67,8 +67,26 @@ func runInit() error {
 	}
 
 	if allExisted {
+		if wantsJSON() {
+			return writeCommandJSON("init", map[string]any{
+				"created":               false,
+				"already_initialized":   true,
+				"example_hooks_created": examplesCreated,
+			})
+		}
 		fmt.Println("  Already initialized. All directories and files exist.")
 		return nil
+	}
+
+	if wantsJSON() {
+		return writeCommandJSON("init", map[string]any{
+			"created":               true,
+			"already_initialized":   false,
+			"example_hooks_created": examplesCreated,
+			"config_dir":            config.ConfigDir(),
+			"data_dir":              config.DataDir(),
+			"state_dir":             config.StateDir(),
+		})
 	}
 
 	fmt.Println(bold("  Calvin initialized!"))

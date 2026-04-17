@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/andrew8088/calvin/internal/config"
 	"github.com/andrew8088/calvin/internal/logging"
@@ -22,8 +23,8 @@ var (
 )
 
 var logsCmd = &cobra.Command{
-	Use:   "logs",
-	Short: "Show Calvin daemon logs",
+	Use:     "logs",
+	Short:   "Show Calvin daemon logs",
 	Example: "  calvin logs\n  calvin logs --hook my-hook\n  calvin logs --level error\n  calvin logs -n 50",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runLogs()
@@ -42,6 +43,9 @@ func init() {
 func runLogs() error {
 	logPath := config.LogPath()
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {
+		if wantsJSON() {
+			return writeCommandJSON("logs", map[string]any{"entries": []logging.Entry{}}, "no log file found")
+		}
 		fmt.Println("  No log file found.")
 		fmt.Printf("  Expected at: %s\n", dim(logPath))
 		fmt.Printf("  Start the daemon: %s\n", cyan("calvin start"))
@@ -71,8 +75,15 @@ func runLogs() error {
 		}
 		entries = append(entries, entry)
 	}
+	entries, err = filterLogsSince(entries, logsSince)
+	if err != nil {
+		return newExitError(2, "logs", "invalid_since", err.Error(), nil, err)
+	}
 
 	if len(entries) == 0 {
+		if wantsJSON() {
+			return writeCommandJSON("logs", map[string]any{"entries": []logging.Entry{}})
+		}
 		fmt.Println("  No matching log entries.")
 		return nil
 	}
@@ -80,6 +91,10 @@ func runLogs() error {
 	start := 0
 	if len(entries) > logsLines {
 		start = len(entries) - logsLines
+	}
+
+	if wantsJSON() {
+		return writeCommandJSON("logs", map[string]any{"entries": entries[start:]})
 	}
 
 	fmt.Println()
@@ -104,10 +119,39 @@ func matchesFilter(e logging.Entry) bool {
 	if logsLevel != "" && string(e.Level) != logsLevel {
 		return false
 	}
-	if logsSince != "" && e.Timestamp < logsSince {
-		return false
-	}
 	return true
+}
+
+func validateSinceTimestamp(since string) error {
+	if since == "" {
+		return nil
+	}
+	if _, err := time.Parse(time.RFC3339, since); err != nil {
+		return fmt.Errorf("invalid --since timestamp %q: %w", since, err)
+	}
+	return nil
+}
+
+func filterLogsSince(entries []logging.Entry, since string) ([]logging.Entry, error) {
+	if err := validateSinceTimestamp(since); err != nil {
+		return nil, err
+	}
+	if since == "" {
+		return entries, nil
+	}
+	sinceTime, _ := time.Parse(time.RFC3339, since)
+	filtered := make([]logging.Entry, 0, len(entries))
+	for _, entry := range entries {
+		entryTime, err := time.Parse(time.RFC3339, entry.Timestamp)
+		if err != nil {
+			continue
+		}
+		if entryTime.Before(sinceTime) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered, nil
 }
 
 func printLogEntry(e logging.Entry) {

@@ -41,42 +41,29 @@ func runStatus() error {
 	eventCount, _ := database.EventCount()
 	hookCounts, _ := hooks.CountByType()
 	success, failed, timeout, _ := database.GetHookStats()
-
-	if jsonOutput {
-		tokenStatus := "missing"
-		if auth.HasToken() {
-			cfg, _ := config.Load()
-			if err := auth.CheckTokenValid(cfg); err != nil {
-				tokenStatus = "invalid"
-			} else {
-				tokenStatus = "valid"
-			}
+	tokenStatus := "missing"
+	if auth.HasToken() {
+		cfg, _ := config.Load()
+		if err := auth.CheckTokenValid(cfg); err != nil {
+			tokenStatus = "invalid"
+		} else {
+			tokenStatus = "valid"
 		}
+	}
 
-		return printJSON(struct {
-			Running       bool           `json:"running"`
-			PID           int            `json:"pid"`
-			UptimeSeconds float64        `json:"uptime_seconds"`
-			SyncToken     bool           `json:"sync_token"`
-			EventCount    int            `json:"events_today"`
-			SyncInterval  int            `json:"sync_interval_seconds"`
-			Hooks         map[string]int `json:"hooks_registered"`
-			HooksSuccess  int            `json:"hooks_success_today"`
-			HooksFailed   int            `json:"hooks_failed_today"`
-			HooksTimeout  int            `json:"hooks_timeout_today"`
-			AuthStatus    string         `json:"auth_status"`
-		}{
-			Running:       running,
-			PID:           pid,
-			UptimeSeconds: uptime,
-			SyncToken:     syncToken != "",
-			EventCount:    eventCount,
-			SyncInterval:  config.Default().SyncIntervalSeconds,
-			Hooks:         hookCounts,
-			HooksSuccess:  success,
-			HooksFailed:   failed,
-			HooksTimeout:  timeout,
-			AuthStatus:    tokenStatus,
+	if wantsJSON() {
+		return writeCommandJSON("status", map[string]any{
+			"running":               running,
+			"pid":                   pid,
+			"uptime_seconds":        uptime,
+			"sync_token":            syncToken != "",
+			"events_today":          eventCount,
+			"sync_interval_seconds": config.Default().SyncIntervalSeconds,
+			"hooks_registered":      hookCounts,
+			"hooks_success_today":   success,
+			"hooks_failed_today":    failed,
+			"hooks_timeout_today":   timeout,
+			"auth_status":           tokenStatus,
 		})
 	}
 

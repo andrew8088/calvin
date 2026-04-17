@@ -64,6 +64,9 @@ calvin events        List today's events
 calvin events <id>   Show event detail with hook execution log
 calvin week          Show the next 7 days of events
 calvin free          Show today's free time between meetings
+calvin commands      List runtime command metadata
+calvin describe      Describe a command path for agents
+calvin schema        Print machine-readable schemas
 calvin hooks list    List all discovered hooks
 calvin hooks new     Create a new hook from template
 calvin hooks schema  Print the JSON input schema
@@ -75,7 +78,60 @@ calvin logs          Show daemon logs (--hook, --level, --event filters)
 calvin version       Print version
 ```
 
-Add `--json` to `events`, `next`, `week`, `free`, or `status` for machine-readable output.
+## Agent Usage
+
+Calvin now exposes a structured CLI surface for agent workflows.
+
+- Use `--json` for structured command output.
+- Use `--output json` if you want the output mode spelled explicitly.
+- Use `CALVIN_OUTPUT=json` to make JSON the default for a session.
+- Use `calvin commands`, `calvin describe`, and `calvin schema` instead of scraping `--help`.
+
+Examples:
+
+```bash
+calvin commands --json
+calvin describe hooks new --json
+calvin schema hook-payload
+calvin version --json
+calvin events --json
+calvin events abc123 --json
+calvin logs --json --since 2026-04-17T17:30:00Z
+calvin test example-notify --json
+```
+
+Structured command output now uses a consistent top-level contract:
+
+```json
+{
+  "ok": true,
+  "command": "version",
+  "data": {
+    "version": "dev",
+    "commit": "none"
+  }
+}
+```
+
+Errors in JSON mode are written to `stderr` as structured JSON with a non-zero exit code:
+
+```json
+{
+  "ok": false,
+  "command": "hooks new",
+  "error": {
+    "code": "invalid_hook_type",
+    "message": "invalid hook type: before-start"
+  }
+}
+```
+
+Notes:
+
+- `match` and `ignore` keep their exit codes: `0` matched, `1` not matched, `2` usage or context error.
+- `help` and `completion` remain human-oriented in v1. Agents should use `commands`, `describe`, and `schema` instead.
+- `auth --json` does not support the interactive browser OAuth flow yet. It supports structured revoke output and structured failures.
+- `start --json` currently reports structured preflight failures only.
 
 `calvin free` prints one free slot per line as `start<TAB>end<TAB>duration_seconds`, using local RFC3339 timestamps.
 

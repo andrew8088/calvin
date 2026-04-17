@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode"
 
 	"github.com/andrew8088/calvin/internal/config"
 	"github.com/andrew8088/calvin/internal/hooks"
@@ -61,10 +63,26 @@ func runHooksList() error {
 	}
 
 	if total == 0 {
+		if wantsJSON() {
+			return writeCommandJSON("hooks list", map[string]any{"hooks": map[string]any{}})
+		}
 		fmt.Println("  No hooks found.")
 		fmt.Printf("  Hooks directory: %s\n", dim(config.HooksDir()))
 		fmt.Printf("  Create one: %s\n", cyan("calvin hooks new before-event-start my-hook"))
 		return nil
+	}
+
+	if wantsJSON() {
+		payload := map[string][]map[string]string{}
+		for _, hookType := range hooks.ValidTypes {
+			for _, h := range allHooks[hookType] {
+				payload[hookType] = append(payload[hookType], map[string]string{
+					"name": h.Name,
+					"path": h.Path,
+				})
+			}
+		}
+		return writeCommandJSON("hooks list", map[string]any{"hooks": payload})
 	}
 
 	fmt.Println()
@@ -85,6 +103,10 @@ func runHooksList() error {
 }
 
 func runHooksNew(hookType, name string) error {
+	if err := validateHookName(name); err != nil {
+		return err
+	}
+
 	valid := false
 	for _, t := range hooks.ValidTypes {
 		if hookType == t {
@@ -135,6 +157,14 @@ echo "Hook fired: $TITLE at $START"
 		return err
 	}
 
+	if wantsJSON() {
+		return writeCommandJSON("hooks new", map[string]any{
+			"hook_type": hookType,
+			"name":      name,
+			"path":      hookPath,
+		})
+	}
+
 	fmt.Printf("  %s Created %s/%s\n", symPass(), hookType, name)
 	fmt.Printf("  Path: %s\n", dim(hookPath))
 	fmt.Println()
@@ -145,7 +175,33 @@ echo "Hook fired: $TITLE at $START"
 	return nil
 }
 
+func validateHookName(name string) error {
+	if name == "" {
+		return fmt.Errorf("hook name cannot be empty")
+	}
+	if strings.Contains(name, "/") || strings.Contains(name, string(filepath.Separator)) || strings.Contains(name, "\\") {
+		return fmt.Errorf("hook name must be a single path segment: %s", name)
+	}
+	if name == "." || name == ".." || strings.Contains(name, "..") {
+		return fmt.Errorf("hook name cannot contain path traversal: %s", name)
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("hook name cannot contain control characters")
+		}
+	}
+	return nil
+}
+
 func runHooksSchema() error {
+	if wantsJSON() {
+		schema, err := namedSchema("hook-payload")
+		if err != nil {
+			return err
+		}
+		return printJSON(schema)
+	}
+
 	schema := map[string]any{
 		"schema_version":   1,
 		"id":               "abc123xyz",

@@ -23,6 +23,9 @@ var weekCmd = &cobra.Command{
 func runWeek(now time.Time) error {
 	dbPath := config.DBPath()
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		if wantsJSON() {
+			return writeCommandJSON("week", map[string]any{"events": []calendar.Event{}}, "no cached events")
+		}
 		fmt.Println("  No cached events.")
 		fmt.Printf("  Run: %s\n", cyan("calvin start"))
 		return nil
@@ -34,9 +37,14 @@ func runWeek(now time.Time) error {
 	}
 	defer database.Close()
 
+	warnings := []string{}
 	if _, err := os.Stat(config.PIDPath()); os.IsNotExist(err) {
-		fmt.Printf("  %s daemon not running, showing cached events\n", symWarn())
-		fmt.Println()
+		if wantsJSON() {
+			warnings = append(warnings, "daemon not running, showing cached events")
+		} else {
+			fmt.Printf("  %s daemon not running, showing cached events\n", symWarn())
+			fmt.Println()
+		}
 	}
 
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -48,15 +56,15 @@ func runWeek(now time.Time) error {
 	}
 
 	if len(events) == 0 {
-		if jsonOutput {
-			return printJSON([]calendar.Event{})
+		if wantsJSON() {
+			return writeCommandJSON("week", map[string]any{"events": []calendar.Event{}}, warnings...)
 		}
 		fmt.Println("  No events this week.")
 		return nil
 	}
 
-	if jsonOutput {
-		return printJSON(events)
+	if wantsJSON() {
+		return writeCommandJSON("week", map[string]any{"events": events}, warnings...)
 	}
 
 	grouped := groupByDay(events, now.Location())

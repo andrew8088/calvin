@@ -12,8 +12,8 @@ import (
 )
 
 var eventsCmd = &cobra.Command{
-	Use:   "events [event-id]",
-	Short: "List today's events or show event detail",
+	Use:     "events [event-id]",
+	Short:   "List today's events or show event detail",
 	Example: "  calvin events\n  calvin events abc123",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 {
@@ -26,6 +26,9 @@ var eventsCmd = &cobra.Command{
 func runEvents() error {
 	dbPath := config.DBPath()
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		if wantsJSON() {
+			return writeCommandJSON("events", map[string]any{"events": []calendar.Event{}}, "no cached events")
+		}
 		fmt.Println("  No cached events.")
 		fmt.Printf("  Run: %s\n", cyan("calvin start"))
 		return nil
@@ -37,9 +40,14 @@ func runEvents() error {
 	}
 	defer database.Close()
 
+	warnings := []string{}
 	if _, err := os.Stat(config.PIDPath()); os.IsNotExist(err) {
-		fmt.Printf("  %s daemon not running, showing cached events\n", symWarn())
-		fmt.Println()
+		if wantsJSON() {
+			warnings = append(warnings, "daemon not running, showing cached events")
+		} else {
+			fmt.Printf("  %s daemon not running, showing cached events\n", symWarn())
+			fmt.Println()
+		}
 	}
 
 	events, err := database.ListEventsForDay(time.Now())
@@ -48,15 +56,15 @@ func runEvents() error {
 	}
 
 	if len(events) == 0 {
-		if jsonOutput {
-			return printJSON([]calendar.Event{})
+		if wantsJSON() {
+			return writeCommandJSON("events", map[string]any{"events": []calendar.Event{}}, warnings...)
 		}
 		fmt.Println("  No events today.")
 		return nil
 	}
 
-	if jsonOutput {
-		return printJSON(events)
+	if wantsJSON() {
+		return writeCommandJSON("events", map[string]any{"events": events}, warnings...)
 	}
 
 	fmt.Println()
@@ -133,7 +141,7 @@ func runEventDetail(eventID string) error {
 		return err
 	}
 
-	if jsonOutput {
+	if wantsJSON() {
 		type execJSON struct {
 			HookName   string `json:"hook_name"`
 			HookType   string `json:"hook_type"`
@@ -159,7 +167,9 @@ func runEventDetail(eventID string) error {
 				ExecutedAt: ex.ExecutedAt,
 			})
 		}
-		return printJSON(detailJSON{Event: *event, HookExecutions: je})
+		return writeCommandJSON("events", map[string]any{
+			"event": detailJSON{Event: *event, HookExecutions: je},
+		})
 	}
 
 	fmt.Println()

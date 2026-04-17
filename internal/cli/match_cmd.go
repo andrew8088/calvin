@@ -61,8 +61,36 @@ var matchCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		criteria, err := matchOpts.criteria()
 		if err != nil {
+			if wantsJSON() {
+				_ = writeJSONError(os.Stderr, commandErrorResult{
+					OK:      false,
+					Command: "match",
+					Error:   commandError{Code: "invalid_filters", Message: err.Error()},
+				})
+				os.Exit(2)
+			}
 			fmt.Fprintf(os.Stderr, "calvin match: %v\n", err)
 			os.Exit(2)
+		}
+		if wantsJSON() {
+			outcome, err := evaluateHookFilter(criteria, matchOpts.eventFile)
+			if err != nil {
+				_ = writeJSONError(os.Stderr, commandErrorResult{
+					OK:      false,
+					Command: "match",
+					Error:   commandError{Code: "filter_error", Message: err.Error()},
+				})
+				os.Exit(2)
+			}
+			_ = writeCommandJSON("match", map[string]any{
+				"matched":   outcome.Matched,
+				"exit_code": outcome.ExitCode,
+				"reasons":   outcome.Reasons,
+			})
+			if outcome.ExitCode != 0 {
+				os.Exit(outcome.ExitCode)
+			}
+			return
 		}
 		code := runHookFilter(criteria, matchOpts.eventFile, matchOpts.why, os.Stderr)
 		if code != 0 {
@@ -79,8 +107,36 @@ var ignoreCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		criteria, err := ignoreOpts.criteria()
 		if err != nil {
+			if wantsJSON() {
+				_ = writeJSONError(os.Stderr, commandErrorResult{
+					OK:      false,
+					Command: "ignore",
+					Error:   commandError{Code: "invalid_filters", Message: err.Error()},
+				})
+				os.Exit(2)
+			}
 			fmt.Fprintf(os.Stderr, "calvin ignore: %v\n", err)
 			os.Exit(2)
+		}
+		if wantsJSON() {
+			outcome, err := evaluateHookFilter(criteria, ignoreOpts.eventFile)
+			if err != nil {
+				_ = writeJSONError(os.Stderr, commandErrorResult{
+					OK:      false,
+					Command: "ignore",
+					Error:   commandError{Code: "filter_error", Message: err.Error()},
+				})
+				os.Exit(2)
+			}
+			_ = writeCommandJSON("ignore", map[string]any{
+				"matched":   outcome.Matched,
+				"exit_code": outcome.ExitCode,
+				"reasons":   outcome.Reasons,
+			})
+			if outcome.ExitCode != 0 {
+				os.Exit(outcome.ExitCode)
+			}
+			return
 		}
 		code := runHookFilter(criteria, ignoreOpts.eventFile, ignoreOpts.why, os.Stderr)
 		if code != 0 {
@@ -107,26 +163,7 @@ func addHookFilterFlags(cmd *cobra.Command, opts *hookFilterOptions) {
 }
 
 func runHookFilter(criteria hooks.MatchCriteria, eventFile string, why bool, stderr io.Writer) int {
-	if !hasAnyCriteria(criteria) {
-		fmt.Fprintln(stderr, "calvin: at least one filter is required")
-		return 2
-	}
-
-	if eventFile == "" {
-		eventFile = os.Getenv("CALVIN_EVENT_FILE")
-	}
-	if eventFile == "" {
-		fmt.Fprintln(stderr, "calvin: no event context found (set CALVIN_EVENT_FILE or pass --event-file)")
-		return 2
-	}
-
-	payload, err := hooks.LoadEventContextFile(eventFile)
-	if err != nil {
-		fmt.Fprintf(stderr, "calvin: %v\n", err)
-		return 2
-	}
-
-	result, err := hooks.MatchHookPayload(payload, criteria)
+	result, err := evaluateHookFilter(criteria, eventFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "calvin: %v\n", err)
 		return 2
@@ -138,10 +175,42 @@ func runHookFilter(criteria hooks.MatchCriteria, eventFile string, why bool, std
 		}
 	}
 
-	if result.Matched {
-		return 0
+	return result.ExitCode
+}
+
+type hookFilterOutcome struct {
+	Matched  bool
+	ExitCode int
+	Reasons  []string
+}
+
+func evaluateHookFilter(criteria hooks.MatchCriteria, eventFile string) (hookFilterOutcome, error) {
+	if !hasAnyCriteria(criteria) {
+		return hookFilterOutcome{}, fmt.Errorf("at least one filter is required")
 	}
-	return 1
+
+	if eventFile == "" {
+		eventFile = os.Getenv("CALVIN_EVENT_FILE")
+	}
+	if eventFile == "" {
+		return hookFilterOutcome{}, fmt.Errorf("no event context found (set CALVIN_EVENT_FILE or pass --event-file)")
+	}
+
+	payload, err := hooks.LoadEventContextFile(eventFile)
+	if err != nil {
+		return hookFilterOutcome{}, err
+	}
+
+	result, err := hooks.MatchHookPayload(payload, criteria)
+	if err != nil {
+		return hookFilterOutcome{}, err
+	}
+
+	code := 1
+	if result.Matched {
+		code = 0
+	}
+	return hookFilterOutcome{Matched: result.Matched, ExitCode: code, Reasons: result.Reasons}, nil
 }
 
 func hasAnyCriteria(criteria hooks.MatchCriteria) bool {

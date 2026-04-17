@@ -26,11 +26,25 @@ func runStop() error {
 		return err
 	}
 	if process == nil {
+		if wantsJSON() {
+			return writeCommandJSON("stop", map[string]any{
+				"running": false,
+				"signal":  "SIGTERM",
+			})
+		}
 		return nil
 	}
 
 	if err := process.Signal(syscall.SIGTERM); err != nil {
 		return fmt.Errorf("sending SIGTERM to PID %d: %w", pid, err)
+	}
+
+	if wantsJSON() {
+		return writeCommandJSON("stop", map[string]any{
+			"running": true,
+			"pid":     pid,
+			"signal":  "SIGTERM",
+		})
 	}
 
 	fmt.Printf("  %s Sent SIGTERM to Calvin (PID: %d)\n", symPass(), pid)
@@ -60,7 +74,9 @@ func findDaemonProcess() (int, *os.Process, error) {
 	data, err := os.ReadFile(config.PIDPath())
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Printf("  %s Calvin is not running (no PID file)\n", symStop())
+			if !wantsJSON() {
+				fmt.Printf("  %s Calvin is not running (no PID file)\n", symStop())
+			}
 			return 0, nil, nil
 		}
 		return 0, nil, err
@@ -75,13 +91,17 @@ func findDaemonProcess() (int, *os.Process, error) {
 	process, err := os.FindProcess(pid)
 	if err != nil {
 		os.Remove(config.PIDPath())
-		fmt.Printf("  %s Process %d not found, cleaned up PID file\n", symWarn(), pid)
+		if !wantsJSON() {
+			fmt.Printf("  %s Process %d not found, cleaned up PID file\n", symWarn(), pid)
+		}
 		return 0, nil, nil
 	}
 
 	if err := process.Signal(syscall.Signal(0)); err != nil {
 		os.Remove(config.PIDPath())
-		fmt.Printf("  %s Process %d not running, cleaned up stale PID file\n", symWarn(), pid)
+		if !wantsJSON() {
+			fmt.Printf("  %s Process %d not running, cleaned up stale PID file\n", symWarn(), pid)
+		}
 		return 0, nil, nil
 	}
 
