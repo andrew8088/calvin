@@ -188,15 +188,15 @@ func runForeground(cfg *config.Config) error {
 				continue
 			}
 
-			if err := database.WithTransaction(ctx, func() error {
+			if err := database.WithTransaction(ctx, func(tx *db.Tx) error {
 				for _, event := range events {
-					if err := database.UpsertEvent(event, newGen); err != nil {
+					if err := tx.UpsertEvent(event, newGen); err != nil {
 						return fmt.Errorf("upserting event: %w", err)
 					}
 				}
 
 				if newToken != "" {
-					if err := database.SetSyncToken(cal.ID, newToken); err != nil {
+					if err := tx.SetSyncToken(cal.ID, newToken); err != nil {
 						return fmt.Errorf("saving sync token: %w", err)
 					}
 				}

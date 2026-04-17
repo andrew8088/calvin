@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -463,8 +464,8 @@ func TestIntegrityCheck(t *testing.T) {
 func TestWithTransaction(t *testing.T) {
 	d := openTestDB(t)
 
-	err := d.WithTransaction(context.Background(), func() error {
-		return d.UpsertEvent(testEvent("txn-evt"), 1)
+	err := d.WithTransaction(context.Background(), func(tx *Tx) error {
+		return tx.UpsertEvent(testEvent("txn-evt"), 1)
 	})
 	if err != nil {
 		t.Fatalf("WithTransaction: %v", err)
@@ -479,8 +480,8 @@ func TestWithTransaction(t *testing.T) {
 func TestWithTransaction_Rollback(t *testing.T) {
 	d := openTestDB(t)
 
-	err := d.WithTransaction(context.Background(), func() error {
-		d.UpsertEvent(testEvent("rollback-evt"), 1)
+	err := d.WithTransaction(context.Background(), func(tx *Tx) error {
+		tx.UpsertEvent(testEvent("rollback-evt"), 1)
 		return context.Canceled
 	})
 	if err == nil {
@@ -645,6 +646,69 @@ func TestGetAdjacentEvents_SkipsCancelled(t *testing.T) {
 	}
 	if prev != nil {
 		t.Errorf("expected nil prev (cancelled should be skipped), got %q", prev.ID)
+	}
+}
+
+func TestConcurrentAccessDoesNotCrash(t *testing.T) {
+	d := openTestDB(t)
+
+	e1 := testEvent("evt-1")
+	e1.Start = time.Date(2026, 4, 14, 9, 0, 0, 0, time.UTC)
+	e1.End = time.Date(2026, 4, 14, 9, 30, 0, 0, time.UTC)
+	if err := d.UpsertEvent(e1, 1); err != nil {
+		t.Fatalf("UpsertEvent evt-1: %v", err)
+	}
+
+	e2 := testEvent("evt-2")
+	e2.Start = time.Date(2026, 4, 14, 10, 0, 0, 0, time.UTC)
+	e2.End = time.Date(2026, 4, 14, 11, 0, 0, 0, time.UTC)
+	if err := d.UpsertEvent(e2, 1); err != nil {
+		t.Fatalf("UpsertEvent evt-2: %v", err)
+	}
+
+	e3 := testEvent("evt-3")
+	e3.Start = time.Date(2026, 4, 14, 12, 0, 0, 0, time.UTC)
+	e3.End = time.Date(2026, 4, 14, 13, 0, 0, 0, time.UTC)
+	if err := d.UpsertEvent(e3, 1); err != nil {
+		t.Fatalf("UpsertEvent evt-3: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 16)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				if _, _, err := d.GetAdjacentEvents("evt-2", e2.Start, e2.End); err != nil {
+					errCh <- fmt.Errorf("GetAdjacentEvents: %w", err)
+					return
+				}
+				if _, err := d.ListUpcomingEvents(e1.Start.Add(-time.Hour), 10); err != nil {
+					errCh <- fmt.Errorf("ListUpcomingEvents: %w", err)
+					return
+				}
+			}
+		}()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("concurrent database access timed out")
+	}
+
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
