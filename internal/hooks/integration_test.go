@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,6 +159,25 @@ func TestFireHooks_ReceivesStdin(t *testing.T) {
 	}
 	if results[0].Stdout == "" {
 		t.Error("expected non-empty stdout from stdin passthrough")
+	}
+}
+
+func TestFireHooks_SetsEventFileEnv(t *testing.T) {
+	setupTestEnv(t)
+	logging.InitStdout()
+	d := openTestDB(t)
+	dir := t.TempDir()
+
+	hook := writeScript(t, dir, "event-file-hook", "#!/bin/sh\nif [ -z \"$CALVIN_EVENT_FILE\" ]; then\n  echo missing >&2\n  exit 1\nfi\ncat \"$CALVIN_EVENT_FILE\"")
+	executor := NewExecutor(testCfg(), d)
+
+	results := executor.FireHooks(context.Background(), testEvent(), "before-event-start", []Hook{hook}, nil, nil)
+
+	if results[0].Status != "success" {
+		t.Fatalf("status = %q, stderr = %q", results[0].Status, results[0].Stderr)
+	}
+	if !strings.Contains(results[0].Stdout, `"title":"Test Meeting"`) {
+		t.Fatalf("stdout missing event title JSON: %q", results[0].Stdout)
 	}
 }
 
