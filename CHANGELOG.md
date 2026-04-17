@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## v0.9.0 — 2026-04-17
+
+### Added
+
+- `calvin logs --follow` / `-f` to stream new matching daemon log entries in text mode.
+
+### Fixed
+
+- Ongoing all-day events are now diffed against the pre-sync database state so they stop being reported as newly created on every refresh.
+- SQLite access now runs through a serialized DB layer to prevent concurrent hook execution and adjacent-event lookups from crashing.
+
+## v0.8.0 — 2026-04-17
+
 ### Breaking
 
 - **Unified JSON contract.** Agent-relevant commands now return a consistent top-level JSON envelope under `--json`, instead of the older mix of raw arrays, raw objects, and text-only responses. If you were parsing the previous raw `--json` shapes from `events`, `next`, `week`, `free`, or `status`, update your automation to read the new `{ "ok", "command", "data" }` structure.
@@ -17,6 +30,30 @@
 ### Docs
 
 - Updated the command list to include `calvin commands`, `calvin describe`, and `calvin schema`, and documented the new JSON contract.
+
+## v0.7.0 — 2026-04-16
+
+### Improved
+
+- GitHub Actions now run on Node 24.
+
+## v0.6.0 — 2026-04-16
+
+### Improved
+
+- `scripts/release.sh` now waits for the GitHub Actions `release.yml` run and surfaces the workflow URL while the release is publishing.
+
+## v0.5.0 — 2026-04-16
+
+### Added
+
+- `calvin week` to show the next 7 days of events.
+- All-day event support across sync, storage, and CLI output.
+- `calvin free` to print today's free time between cached meetings.
+
+### Improved
+
+- Added local release automation scripts for tagged GitHub Releases.
 
 ## v0.4.0 — 2026-04-15
 
