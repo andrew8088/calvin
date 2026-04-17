@@ -165,6 +165,7 @@ func runForeground(cfg *config.Config) error {
 		newGen := syncGen + 1
 
 		var allEvents []calendar.Event
+		var allDiffs []calendar.DiffResult
 		var allFullSync bool
 
 		for _, cal := range calendars {
@@ -180,6 +181,12 @@ func runForeground(cfg *config.Config) error {
 				continue
 			}
 			failCount = 0
+
+			diffs, err := diffEventsBeforeUpsert(database, events)
+			if err != nil {
+				log.Error("sync", fmt.Sprintf("Failed to diff %s: %v", cal.ID, err))
+				continue
+			}
 
 			if err := database.WithTransaction(ctx, func() error {
 				for _, event := range events {
@@ -200,6 +207,7 @@ func runForeground(cfg *config.Config) error {
 			}
 
 			allEvents = append(allEvents, events...)
+			allDiffs = append(allDiffs, diffs...)
 			if fullSync {
 				allFullSync = true
 			}
@@ -214,16 +222,14 @@ func runForeground(cfg *config.Config) error {
 			}
 		}
 
-		dbEvents, _ := database.ListUpcomingEvents(time.Now().Add(-1*time.Hour), 200)
-		diffs := calendar.Diff(dbEvents, allEvents, newGen)
-		sched.ProcessDiff(ctx, diffs)
+		sched.ProcessDiff(ctx, allDiffs)
 
 		if err := sched.ScheduleFromDB(ctx); err != nil {
 			log.Error("scheduler", fmt.Sprintf("Failed to schedule: %v", err))
 		}
 
 		log.Info("sync", fmt.Sprintf("Synced %d events across %d calendars, %d diffs, %d timers active",
-			len(allEvents), len(calendars), len(diffs), sched.TimerCount()))
+			len(allEvents), len(calendars), len(allDiffs), sched.TimerCount()))
 	}
 
 	doSync()
@@ -255,6 +261,28 @@ func runForeground(cfg *config.Config) error {
 			return nil
 		}
 	}
+}
+
+func diffEventsBeforeUpsert(database *db.DB, apiEvents []calendar.Event) ([]calendar.DiffResult, error) {
+	dbEvents := make([]calendar.Event, 0, len(apiEvents))
+	seen := make(map[string]bool, len(apiEvents))
+
+	for _, event := range apiEvents {
+		if seen[event.ID] {
+			continue
+		}
+		seen[event.ID] = true
+
+		existing, err := database.GetEvent(event.ID)
+		if err != nil {
+			return nil, fmt.Errorf("loading existing event %q: %w", event.ID, err)
+		}
+		if existing != nil {
+			dbEvents = append(dbEvents, *existing)
+		}
+	}
+
+	return calendar.Diff(dbEvents, apiEvents, 0), nil
 }
 
 func printBanner(cfg *config.Config, database *db.DB) {
