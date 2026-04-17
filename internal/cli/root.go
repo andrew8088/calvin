@@ -55,6 +55,8 @@ func init() {
 	rootCmd.AddCommand(eventsCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(hooksCmd)
+	rootCmd.AddCommand(matchCmd)
+	rootCmd.AddCommand(ignoreCmd)
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(logsCmd)
