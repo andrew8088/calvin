@@ -3,6 +3,8 @@ package calendar
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -268,31 +270,35 @@ func TestSync_QueryParameters_SameForFullAndIncremental(t *testing.T) {
 	// This test documents that contract by verifying the query parameter
 	// construction in the source code matches expectations.
 
-	// Verify via source inspection that TimeMin/TimeMax are not used in Sync
-	syncSrc, err := os.ReadFile("sync.go")
+	// Determine path to sync.go relative to this test file
+	_, thisFile, _, _ := runtime.Caller(0)
+	baseDir := filepath.Dir(thisFile)
+	syncPath := filepath.Join(baseDir, "sync.go")
+
+	syncSrc, err := os.ReadFile(syncPath)
 	if err != nil {
-		t.Skip("cannot read sync.go, skipping source inspection")
+		t.Fatalf("cannot read sync.go from %q: %v", syncPath, err)
 	}
 
 	src := string(syncSrc)
 
 	if strings.Contains(src, "TimeMin") || strings.Contains(src, "TimeMax") {
-		t.Error("Sync must not use TimeMin/TimeMax — they break sync-token compatibility with Google Calendar API")
+		t.Fatal("Sync must not use TimeMin/TimeMax — they break sync-token compatibility with Google Calendar API")
 	}
 
 	if !strings.Contains(src, "SyncToken") {
-		t.Error("Sync should use SyncToken for incremental refreshes")
+		t.Fatal("Sync should use SyncToken for incremental refreshes")
 	}
 
 	if !strings.Contains(src, "SingleEvents(true)") {
-		t.Error("Sync should use SingleEvents(true)")
+		t.Fatal("Sync should use SingleEvents(true)")
 	}
 
 	if !strings.Contains(src, `OrderBy("startTime")`) {
-		t.Error("Sync should use OrderBy(startTime)")
+		t.Fatal("Sync should use OrderBy(startTime)")
 	}
 
 	if !strings.Contains(src, "ShowDeleted(true)") {
-		t.Error("Sync should use ShowDeleted(true)")
+		t.Fatal("Sync should use ShowDeleted(true)")
 	}
 }
