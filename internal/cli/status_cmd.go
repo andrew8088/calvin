@@ -37,13 +37,25 @@ func runStatus() error {
 	defer database.Close()
 
 	running, pid, uptime := daemonStatus()
-	syncToken, _ := database.GetSyncToken("primary")
 	eventCount, _ := database.EventCount()
 	hookCounts, _ := hooks.CountByType()
 	success, failed, timeout, _ := database.GetHookStats()
+
+	cfg, _ := config.Load()
+	calendars := cfg.ResolvedCalendars()
+	syncTokens := make(map[string]bool, len(calendars))
+	for _, cal := range calendars {
+		tok, _ := database.GetSyncToken(cal.ID)
+		syncTokens[cal.ID] = tok != ""
+	}
+
+	jsonSyncTokens := make(map[string]bool, len(syncTokens))
+	for k, v := range syncTokens {
+		jsonSyncTokens[k] = v
+	}
+
 	tokenStatus := "missing"
 	if auth.HasToken() {
-		cfg, _ := config.Load()
 		if err := auth.CheckTokenValid(cfg); err != nil {
 			tokenStatus = "invalid"
 		} else {
@@ -56,14 +68,14 @@ func runStatus() error {
 			"running":               running,
 			"pid":                   pid,
 			"uptime_seconds":        uptime,
-			"sync_token":            syncToken != "",
-			"events_today":          eventCount,
+			"sync_token":            len(jsonSyncTokens) > 0 && hasValidToken(jsonSyncTokens),
 			"sync_interval_seconds": config.Default().SyncIntervalSeconds,
 			"hooks_registered":      hookCounts,
 			"hooks_success_today":   success,
 			"hooks_failed_today":    failed,
 			"hooks_timeout_today":   timeout,
 			"auth_status":           tokenStatus,
+			"sync_tokens":           jsonSyncTokens,
 		})
 	}
 
@@ -80,10 +92,13 @@ func runStatus() error {
 	fmt.Println()
 
 	fmt.Printf("  %s\n", bold("Sync"))
-	if syncToken != "" {
-		fmt.Printf("    last sync:    %s\n", dim("token present"))
-	} else {
-		fmt.Printf("    last sync:    %s\n", dim("never"))
+	fmt.Println("    last sync:")
+	for _, cal := range calendars {
+		status := dim("missing")
+		if hasToken := syncTokens[cal.ID]; hasToken {
+			status = dim("token present")
+		}
+		fmt.Printf("      %-20s %s\n", cal.ID+":", status)
 	}
 	fmt.Printf("    events today: %d\n", eventCount)
 	fmt.Printf("    sync interval: %ds\n", config.Default().SyncIntervalSeconds)
@@ -113,7 +128,6 @@ func runStatus() error {
 
 	fmt.Printf("  %s\n", bold("Auth"))
 	if auth.HasToken() {
-		cfg, _ := config.Load()
 		if err := auth.CheckTokenValid(cfg); err != nil {
 			fmt.Printf("    token: %s\n", red("invalid ("+err.Error()+")"))
 		} else {
@@ -151,4 +165,13 @@ func daemonStatus() (running bool, pid int, uptimeSeconds float64) {
 	}
 
 	return true, pid, uptimeSeconds
+}
+
+func hasValidToken(tokens map[string]bool) bool {
+	for _, v := range tokens {
+		if v {
+			return true
+		}
+	}
+	return false
 }

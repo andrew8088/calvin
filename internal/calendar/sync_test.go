@@ -1,7 +1,8 @@
 package calendar
 
 import (
-	"errors"
+	"os"
+	"strings"
 	"testing"
 
 	googlecalendar "google.golang.org/api/calendar/v3"
@@ -248,5 +249,49 @@ func TestConvertEvent_DefaultStatus(t *testing.T) {
 	}
 	if event.Status != "confirmed" {
 		t.Errorf("expected default status 'confirmed', got %q", event.Status)
+	}
+}
+
+func TestSync_QueryParameters_SameForFullAndIncremental(t *testing.T) {
+	// The Sync method must use identical base query parameters for both
+	// initial (full) sync and incremental sync — only the syncToken differs.
+	// Google Calendar API strongly requires this (same query params plus syncToken/maxResults
+	// are allowed to differ between requests).
+	//
+	// The base parameters are:
+	//   SingleEvents(true), OrderBy("startTime"), ShowDeleted(true)
+	//
+	// The incremental path adds: SyncToken(token)
+	// Neither path uses: TimeMin, TimeMax
+	//
+	// This test documents that contract by verifying the query parameter
+	// construction in the source code matches expectations.
+
+	// Verify via source inspection that TimeMin/TimeMax are not used in Sync
+	syncSrc, err := os.ReadFile("sync.go")
+	if err != nil {
+		t.Skip("cannot read sync.go, skipping source inspection")
+	}
+
+	src := string(syncSrc)
+
+	if strings.Contains(src, "TimeMin") || strings.Contains(src, "TimeMax") {
+		t.Error("Sync must not use TimeMin/TimeMax — they break sync-token compatibility with Google Calendar API")
+	}
+
+	if !strings.Contains(src, "SyncToken") {
+		t.Error("Sync should use SyncToken for incremental refreshes")
+	}
+
+	if !strings.Contains(src, "SingleEvents(true)") {
+		t.Error("Sync should use SingleEvents(true)")
+	}
+
+	if !strings.Contains(src, `OrderBy("startTime")`) {
+		t.Error("Sync should use OrderBy(startTime)")
+	}
+
+	if !strings.Contains(src, "ShowDeleted(true)") {
+		t.Error("Sync should use ShowDeleted(true)")
 	}
 }

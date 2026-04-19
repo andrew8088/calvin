@@ -39,12 +39,8 @@ func (s *Syncer) Sync(ctx context.Context, calendarID, syncToken string) ([]Even
 			OrderBy("startTime").
 			ShowDeleted(true)
 
-		if syncToken != "" && pageToken == "" {
+		if pageToken == "" && syncToken != "" {
 			call = call.SyncToken(syncToken)
-		} else if fullSync && pageToken == "" {
-			now := time.Now()
-			call = call.TimeMin(now.Format(time.RFC3339)).
-				TimeMax(now.Add(7 * 24 * time.Hour).Format(time.RFC3339))
 		}
 
 		if pageToken != "" {
