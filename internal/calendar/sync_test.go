@@ -255,6 +255,31 @@ func TestConvertEvent_DefaultStatus(t *testing.T) {
 	}
 }
 
+func syncFuncBody(src string) string {
+	start := strings.Index(src, "func (s *Syncer) Sync(")
+	if start < 0 {
+		return ""
+	}
+	brace := strings.Index(src[start:], "{")
+	if brace < 0 {
+		return ""
+	}
+	depth := 0
+	i := start + brace
+	for ; i < len(src); i++ {
+		switch src[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+		}
+		if depth == 0 {
+			return src[start : i+1]
+		}
+	}
+	return src[start:]
+}
+
 func TestSync_QueryParameters_SameForFullAndIncremental(t *testing.T) {
 	// The Sync method must use identical base query parameters for both
 	// initial (full) sync and incremental sync — only the syncToken differs.
@@ -270,7 +295,6 @@ func TestSync_QueryParameters_SameForFullAndIncremental(t *testing.T) {
 	// This test documents that contract by verifying the query parameter
 	// construction in the source code matches expectations.
 
-	// Determine path to sync.go relative to this test file
 	_, thisFile, _, _ := runtime.Caller(0)
 	baseDir := filepath.Dir(thisFile)
 	syncPath := filepath.Join(baseDir, "sync.go")
@@ -280,25 +304,28 @@ func TestSync_QueryParameters_SameForFullAndIncremental(t *testing.T) {
 		t.Fatalf("cannot read sync.go from %q: %v", syncPath, err)
 	}
 
-	src := string(syncSrc)
+	funcBody := syncFuncBody(string(syncSrc))
+	if funcBody == "" {
+		t.Fatal("could not find Sync method in sync.go")
+	}
 
-	if strings.Contains(src, "TimeMin") || strings.Contains(src, "TimeMax") {
+	if strings.Contains(funcBody, "TimeMin") || strings.Contains(funcBody, "TimeMax") {
 		t.Fatal("Sync must not use TimeMin/TimeMax — they break sync-token compatibility with Google Calendar API")
 	}
 
-	if !strings.Contains(src, "SyncToken") {
+	if !strings.Contains(funcBody, "SyncToken") {
 		t.Fatal("Sync should use SyncToken for incremental refreshes")
 	}
 
-	if !strings.Contains(src, "SingleEvents(true)") {
+	if !strings.Contains(funcBody, "SingleEvents(true)") {
 		t.Fatal("Sync should use SingleEvents(true)")
 	}
 
-	if !strings.Contains(src, `OrderBy("startTime")`) {
+	if !strings.Contains(funcBody, `OrderBy("startTime")`) {
 		t.Fatal("Sync should use OrderBy(startTime)")
 	}
 
-	if !strings.Contains(src, "ShowDeleted(true)") {
+	if !strings.Contains(funcBody, "ShowDeleted(true)") {
 		t.Fatal("Sync should use ShowDeleted(true)")
 	}
 }
