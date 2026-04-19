@@ -13,17 +13,106 @@ import (
 
 type Syncer struct {
 	tokenSource oauth2.TokenSource
+	now         func() time.Time
+	newService  func(context.Context, oauth2.TokenSource) (*googlecalendar.Service, error)
 }
 
 func NewSyncer(ts oauth2.TokenSource) *Syncer {
-	return &Syncer{tokenSource: ts}
+	return &Syncer{
+		tokenSource: ts,
+		now:         time.Now,
+		newService:  newCalendarService,
+	}
+}
+
+type syncQueryPlan struct {
+	fullSync  bool
+	orderBy   string
+	syncToken string
+	timeMin   string
+	timeMax   string
+}
+
+type syncRequestSpec struct {
+	singleEvents bool
+	showDeleted  bool
+	orderBy      string
+	syncToken    string
+	timeMin      string
+	timeMax      string
+	pageToken    string
+}
+
+func buildSyncQueryPlan(now time.Time, syncToken string) syncQueryPlan {
+	plan := syncQueryPlan{
+		fullSync:  syncToken == "",
+		syncToken: syncToken,
+	}
+	if syncToken != "" {
+		return plan
+	}
+
+	plan.orderBy = "startTime"
+	plan.timeMin = now.Format(time.RFC3339)
+	plan.timeMax = now.Add(7 * 24 * time.Hour).Format(time.RFC3339)
+	return plan
+}
+
+func (p syncQueryPlan) requestSpec(pageToken string) syncRequestSpec {
+	return syncRequestSpec{
+		singleEvents: true,
+		showDeleted:  true,
+		orderBy:      p.orderBy,
+		syncToken:    p.syncToken,
+		timeMin:      p.timeMin,
+		timeMax:      p.timeMax,
+		pageToken:    pageToken,
+	}
+}
+
+func applySyncRequestSpec(call *googlecalendar.EventsListCall, spec syncRequestSpec) *googlecalendar.EventsListCall {
+	call = call.SingleEvents(spec.singleEvents).ShowDeleted(spec.showDeleted)
+	if spec.orderBy != "" {
+		call = call.OrderBy(spec.orderBy)
+	}
+	if spec.syncToken != "" {
+		call = call.SyncToken(spec.syncToken)
+	}
+	if spec.timeMin != "" {
+		call = call.TimeMin(spec.timeMin)
+	}
+	if spec.timeMax != "" {
+		call = call.TimeMax(spec.timeMax)
+	}
+	if spec.pageToken != "" {
+		call = call.PageToken(spec.pageToken)
+	}
+	return call
+}
+
+func newCalendarService(ctx context.Context, ts oauth2.TokenSource) (*googlecalendar.Service, error) {
+	return googlecalendar.NewService(ctx, option.WithTokenSource(ts))
+}
+
+func (s *Syncer) currentTime() time.Time {
+	if s.now == nil {
+		return time.Now()
+	}
+	return s.now()
+}
+
+func (s *Syncer) service(ctx context.Context) (*googlecalendar.Service, error) {
+	if s.newService == nil {
+		return newCalendarService(ctx, s.tokenSource)
+	}
+	return s.newService(ctx, s.tokenSource)
 }
 
 func (s *Syncer) Sync(ctx context.Context, calendarID, syncToken string) ([]Event, string, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	srv, err := googlecalendar.NewService(ctx, option.WithTokenSource(s.tokenSource))
+	srv, err := s.service(ctx)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("creating calendar service: %w", err)
 	}
@@ -31,25 +120,10 @@ func (s *Syncer) Sync(ctx context.Context, calendarID, syncToken string) ([]Even
 	var allEvents []Event
 	var nextSyncToken string
 	pageToken := ""
-	fullSync := syncToken == ""
+	plan := buildSyncQueryPlan(s.currentTime(), syncToken)
 
 	for {
-		call := srv.Events.List(calendarID).
-			SingleEvents(true).
-			OrderBy("startTime").
-			ShowDeleted(true)
-
-		if syncToken != "" && pageToken == "" {
-			call = call.SyncToken(syncToken)
-		} else if fullSync && pageToken == "" {
-			now := time.Now()
-			call = call.TimeMin(now.Format(time.RFC3339)).
-				TimeMax(now.Add(7 * 24 * time.Hour).Format(time.RFC3339))
-		}
-
-		if pageToken != "" {
-			call = call.PageToken(pageToken)
-		}
+		call := applySyncRequestSpec(srv.Events.List(calendarID), plan.requestSpec(pageToken))
 
 		result, err := call.Do()
 		if err != nil {
@@ -76,19 +150,19 @@ func (s *Syncer) Sync(ctx context.Context, calendarID, syncToken string) ([]Even
 		break
 	}
 
-	return allEvents, nextSyncToken, fullSync, nil
+	return allEvents, nextSyncToken, plan.fullSync, nil
 }
 
 func (s *Syncer) FetchNextEvent(ctx context.Context, calendarID string) (*Event, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	srv, err := googlecalendar.NewService(ctx, option.WithTokenSource(s.tokenSource))
+	srv, err := s.service(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("creating calendar service: %w", err)
 	}
 
-	now := time.Now()
+	now := s.currentTime()
 	result, err := srv.Events.List(calendarID).
 		SingleEvents(true).
 		OrderBy("startTime").
@@ -114,7 +188,7 @@ func (s *Syncer) CheckAPIAccess(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	srv, err := googlecalendar.NewService(ctx, option.WithTokenSource(s.tokenSource))
+	srv, err := s.service(ctx)
 	if err != nil {
 		return fmt.Errorf("creating calendar service: %w", err)
 	}

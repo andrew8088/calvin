@@ -1,10 +1,17 @@
 package calendar
 
 import (
+	"context"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
+	"time"
 
+	"golang.org/x/oauth2"
 	googlecalendar "google.golang.org/api/calendar/v3"
+	"google.golang.org/api/option"
 )
 
 func TestInferProvider(t *testing.T) {
@@ -123,6 +130,177 @@ func TestIsGoneError(t *testing.T) {
 		if got != tt.expect {
 			t.Errorf("isGoneError(%q) = %v, want %v", tt.err, got, tt.expect)
 		}
+	}
+}
+
+func TestBuildSyncQueryPlanFullSync(t *testing.T) {
+	now := time.Date(2026, 4, 18, 15, 30, 0, 0, time.UTC)
+
+	plan := buildSyncQueryPlan(now, "")
+	spec := plan.requestSpec("")
+	pageSpec := plan.requestSpec("page-2")
+
+	if !plan.fullSync {
+		t.Fatal("expected full sync plan")
+	}
+	if spec.syncToken != "" {
+		t.Fatalf("syncToken = %q, want empty", spec.syncToken)
+	}
+	if spec.orderBy != "startTime" {
+		t.Fatalf("orderBy = %q, want startTime", spec.orderBy)
+	}
+	if spec.timeMin != now.Format(time.RFC3339) {
+		t.Fatalf("timeMin = %q, want %q", spec.timeMin, now.Format(time.RFC3339))
+	}
+	wantMax := now.Add(7 * 24 * time.Hour).Format(time.RFC3339)
+	if spec.timeMax != wantMax {
+		t.Fatalf("timeMax = %q, want %q", spec.timeMax, wantMax)
+	}
+	if pageSpec.pageToken != "page-2" {
+		t.Fatalf("pageToken = %q, want page-2", pageSpec.pageToken)
+	}
+	if pageSpec.timeMin != spec.timeMin || pageSpec.timeMax != spec.timeMax || pageSpec.orderBy != spec.orderBy {
+		t.Fatal("paginated full-sync request should preserve the original filters")
+	}
+}
+
+func TestBuildSyncQueryPlanIncrementalSync(t *testing.T) {
+	now := time.Date(2026, 4, 18, 15, 30, 0, 0, time.UTC)
+
+	plan := buildSyncQueryPlan(now, "stored-sync-token")
+	spec := plan.requestSpec("page-2")
+
+	if plan.fullSync {
+		t.Fatal("expected incremental sync plan")
+	}
+	if spec.syncToken != "stored-sync-token" {
+		t.Fatalf("syncToken = %q, want stored-sync-token", spec.syncToken)
+	}
+	if spec.orderBy != "" {
+		t.Fatalf("orderBy = %q, want empty", spec.orderBy)
+	}
+	if spec.timeMin != "" || spec.timeMax != "" {
+		t.Fatalf("incremental sync should not set time bounds, got timeMin=%q timeMax=%q", spec.timeMin, spec.timeMax)
+	}
+	if !spec.singleEvents || !spec.showDeleted {
+		t.Fatal("incremental sync should keep singleEvents and showDeleted enabled")
+	}
+	if spec.pageToken != "page-2" {
+		t.Fatalf("pageToken = %q, want page-2", spec.pageToken)
+	}
+}
+
+func TestSyncPreservesIncrementalQueryAcrossPages(t *testing.T) {
+	syncer := NewSyncer(oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "token"}))
+
+	var seenQueries []string
+	syncer.newService = func(ctx context.Context, _ oauth2.TokenSource) (*googlecalendar.Service, error) {
+		client := &http.Client{
+			Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				query := req.URL.Query()
+				seenQueries = append(seenQueries, req.URL.RawQuery)
+
+				switch query.Get("pageToken") {
+				case "":
+					if got := query.Get("syncToken"); got != "stored-sync-token" {
+						t.Errorf("page 1 syncToken = %q, want stored-sync-token", got)
+					}
+					if got := query.Get("orderBy"); got != "" {
+						t.Errorf("page 1 orderBy = %q, want empty", got)
+					}
+					if got := query.Get("timeMin"); got != "" {
+						t.Errorf("page 1 timeMin = %q, want empty", got)
+					}
+					if got := query.Get("timeMax"); got != "" {
+						t.Errorf("page 1 timeMax = %q, want empty", got)
+					}
+					return jsonResponse(req, `{
+						"items": [
+							{
+								"id": "evt-1",
+								"summary": "Planning",
+								"start": {"dateTime": "2026-04-18T10:00:00Z"},
+								"end": {"dateTime": "2026-04-18T11:00:00Z"}
+							}
+						],
+						"nextPageToken": "page-2"
+					}`), nil
+				case "page-2":
+					if got := query.Get("syncToken"); got != "stored-sync-token" {
+						t.Errorf("page 2 syncToken = %q, want stored-sync-token", got)
+					}
+					if got := query.Get("orderBy"); got != "" {
+						t.Errorf("page 2 orderBy = %q, want empty", got)
+					}
+					if got := query.Get("timeMin"); got != "" {
+						t.Errorf("page 2 timeMin = %q, want empty", got)
+					}
+					if got := query.Get("timeMax"); got != "" {
+						t.Errorf("page 2 timeMax = %q, want empty", got)
+					}
+					return jsonResponse(req, `{
+						"items": [
+							{
+								"id": "evt-2",
+								"summary": "Retro",
+								"start": {"dateTime": "2026-04-18T12:00:00Z"},
+								"end": {"dateTime": "2026-04-18T13:00:00Z"}
+							}
+						],
+						"nextSyncToken": "fresh-sync-token"
+					}`), nil
+				default:
+					t.Fatalf("unexpected pageToken %q", query.Get("pageToken"))
+					return nil, nil
+				}
+			}),
+		}
+
+		return googlecalendar.NewService(
+			ctx,
+			option.WithHTTPClient(client),
+			option.WithEndpoint("https://calendar.test/"),
+		)
+	}
+
+	events, nextSyncToken, fullSync, err := syncer.Sync(context.Background(), "work@company.com", "stored-sync-token")
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if fullSync {
+		t.Fatal("expected incremental sync")
+	}
+	if nextSyncToken != "fresh-sync-token" {
+		t.Fatalf("nextSyncToken = %q, want fresh-sync-token", nextSyncToken)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	if events[0].Calendar != "work@company.com" || events[1].Calendar != "work@company.com" {
+		t.Fatalf("events should preserve calendar ID, got %+v", events)
+	}
+	if len(seenQueries) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(seenQueries))
+	}
+	if !strings.Contains(seenQueries[1], "pageToken=page-2") {
+		t.Fatalf("second request should include pageToken, got %q", seenQueries[1])
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func jsonResponse(req *http.Request, body string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"application/json"},
+		},
+		Body:    io.NopCloser(strings.NewReader(body)),
+		Request: req,
 	}
 }
 

@@ -166,7 +166,7 @@ func runForeground(cfg *config.Config) error {
 
 		var allEvents []calendar.Event
 		var allDiffs []calendar.DiffResult
-		var allFullSync bool
+		fullSyncCalendars := make([]string, 0, len(calendars))
 
 		for _, cal := range calendars {
 			syncToken, _ := database.GetSyncToken(cal.ID)
@@ -209,16 +209,16 @@ func runForeground(cfg *config.Config) error {
 			allEvents = append(allEvents, events...)
 			allDiffs = append(allDiffs, diffs...)
 			if fullSync {
-				allFullSync = true
+				fullSyncCalendars = append(fullSyncCalendars, cal.ID)
 			}
 		}
 
-		if allFullSync {
-			deleted, err := database.DeleteStaleSyncGeneration(newGen)
+		for _, calendarID := range fullSyncCalendars {
+			deleted, err := database.DeleteStaleSyncGenerationForCalendar(calendarID, newGen)
 			if err != nil {
-				log.Error("sync", fmt.Sprintf("Failed to clean stale events: %v", err))
+				log.Error("sync", fmt.Sprintf("Failed to clean stale events for %s: %v", calendarID, err))
 			} else if len(deleted) > 0 {
-				log.Info("sync", fmt.Sprintf("Removed %d stale events", len(deleted)))
+				log.Info("sync", fmt.Sprintf("Removed %d stale events from %s", len(deleted), calendarID))
 			}
 		}
 

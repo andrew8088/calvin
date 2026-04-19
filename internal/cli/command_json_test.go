@@ -86,6 +86,76 @@ func TestSyncJSONModeNoDaemon(t *testing.T) {
 	}
 }
 
+func TestStatusJSONModeReportsConfiguredCalendarsAndInterval(t *testing.T) {
+	temp, env := isolatedEnv(t)
+
+	configDir := filepath.Join(temp, "config", "calvin")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("os.MkdirAll: %v", err)
+	}
+	configData := `sync_interval_seconds = 123
+
+[[calendars]]
+id = "work@company.com"
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(configData), 0o644); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+
+	dataDir := filepath.Join(temp, "data", "calvin")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatalf("os.MkdirAll: %v", err)
+	}
+	database, err := db.Open(filepath.Join(dataDir, "events.db"), false)
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	if err := database.SetSyncToken("work@company.com", "token-work"); err != nil {
+		t.Fatalf("database.SetSyncToken: %v", err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatalf("database.Close: %v", err)
+	}
+
+	stdout, stderr, err := runCLIWithEnv(t, env, "status", "--json")
+	if err != nil || stderr != "" {
+		t.Fatalf("stdout=%s stderr=%s err=%v", stdout, stderr, err)
+	}
+
+	var result struct {
+		OK   bool `json:"ok"`
+		Data struct {
+			SyncToken           bool `json:"sync_token"`
+			SyncIntervalSeconds int  `json:"sync_interval_seconds"`
+			SyncCalendars       []struct {
+				ID        string `json:"id"`
+				SyncToken bool   `json:"sync_token"`
+			} `json:"sync_calendars"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if !result.OK {
+		t.Fatalf("expected ok result, got %s", stdout)
+	}
+	if !result.Data.SyncToken {
+		t.Fatalf("expected aggregate sync_token=true, got false in %s", stdout)
+	}
+	if result.Data.SyncIntervalSeconds != 123 {
+		t.Fatalf("sync_interval_seconds = %d, want 123", result.Data.SyncIntervalSeconds)
+	}
+	if len(result.Data.SyncCalendars) != 1 {
+		t.Fatalf("expected 1 sync calendar, got %d", len(result.Data.SyncCalendars))
+	}
+	if result.Data.SyncCalendars[0].ID != "work@company.com" {
+		t.Fatalf("calendar id = %q, want work@company.com", result.Data.SyncCalendars[0].ID)
+	}
+	if !result.Data.SyncCalendars[0].SyncToken {
+		t.Fatalf("expected calendar sync token to be true, got false in %s", stdout)
+	}
+}
+
 func TestLogsJSONModeReturnsStructuredEntries(t *testing.T) {
 	temp, env := isolatedEnv(t)
 	seedLogs(t, temp, []logging.Entry{{

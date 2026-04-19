@@ -23,11 +23,21 @@ var statusCmd = &cobra.Command{
 	},
 }
 
+type syncCalendarStatus struct {
+	ID        string `json:"id"`
+	SyncToken bool   `json:"sync_token"`
+}
+
 func runStatus() error {
 	dbPath := config.DBPath()
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		errMsg("No event data", "Calvin hasn't been started yet.", "calvin start")
 		return fmt.Errorf("no database")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
 	}
 
 	database, err := db.Open(dbPath, true)
@@ -37,13 +47,28 @@ func runStatus() error {
 	defer database.Close()
 
 	running, pid, uptime := daemonStatus()
-	syncToken, _ := database.GetSyncToken("primary")
 	eventCount, _ := database.EventCount()
 	hookCounts, _ := hooks.CountByType()
 	success, failed, timeout, _ := database.GetHookStats()
+	syncCalendars := make([]syncCalendarStatus, 0, len(cfg.ResolvedCalendars()))
+	hasAnySyncToken := false
+	for _, cal := range cfg.ResolvedCalendars() {
+		syncToken, err := database.GetSyncToken(cal.ID)
+		if err != nil {
+			return fmt.Errorf("loading sync token for %q: %w", cal.ID, err)
+		}
+		hasToken := syncToken != ""
+		syncCalendars = append(syncCalendars, syncCalendarStatus{
+			ID:        cal.ID,
+			SyncToken: hasToken,
+		})
+		if hasToken {
+			hasAnySyncToken = true
+		}
+	}
+
 	tokenStatus := "missing"
 	if auth.HasToken() {
-		cfg, _ := config.Load()
 		if err := auth.CheckTokenValid(cfg); err != nil {
 			tokenStatus = "invalid"
 		} else {
@@ -56,9 +81,10 @@ func runStatus() error {
 			"running":               running,
 			"pid":                   pid,
 			"uptime_seconds":        uptime,
-			"sync_token":            syncToken != "",
+			"sync_token":            hasAnySyncToken,
+			"sync_calendars":        syncCalendars,
 			"events_today":          eventCount,
-			"sync_interval_seconds": config.Default().SyncIntervalSeconds,
+			"sync_interval_seconds": cfg.SyncIntervalSeconds,
 			"hooks_registered":      hookCounts,
 			"hooks_success_today":   success,
 			"hooks_failed_today":    failed,
@@ -80,13 +106,22 @@ func runStatus() error {
 	fmt.Println()
 
 	fmt.Printf("  %s\n", bold("Sync"))
-	if syncToken != "" {
-		fmt.Printf("    last sync:    %s\n", dim("token present"))
-	} else {
-		fmt.Printf("    last sync:    %s\n", dim("never"))
+	tokenCount := 0
+	for _, cal := range syncCalendars {
+		if cal.SyncToken {
+			tokenCount++
+		}
+	}
+	fmt.Printf("    token state:  %d/%d calendars have sync tokens\n", tokenCount, len(syncCalendars))
+	for _, cal := range syncCalendars {
+		state := "missing"
+		if cal.SyncToken {
+			state = "token present"
+		}
+		fmt.Printf("    calendar %s: %s\n", cal.ID, dim(state))
 	}
 	fmt.Printf("    events today: %d\n", eventCount)
-	fmt.Printf("    sync interval: %ds\n", config.Default().SyncIntervalSeconds)
+	fmt.Printf("    sync interval: %ds\n", cfg.SyncIntervalSeconds)
 	fmt.Println()
 
 	fmt.Printf("  %s\n", bold("Hooks"))
@@ -113,7 +148,6 @@ func runStatus() error {
 
 	fmt.Printf("  %s\n", bold("Auth"))
 	if auth.HasToken() {
-		cfg, _ := config.Load()
 		if err := auth.CheckTokenValid(cfg); err != nil {
 			fmt.Printf("    token: %s\n", red("invalid ("+err.Error()+")"))
 		} else {

@@ -377,18 +377,26 @@ func TestSyncGeneration(t *testing.T) {
 	}
 }
 
-func TestDeleteStaleSyncGeneration(t *testing.T) {
+func TestDeleteStaleSyncGenerationForCalendar(t *testing.T) {
 	d := openTestDB(t)
 
-	d.UpsertEvent(testEvent("old"), 1)
+	old := testEvent("old")
+	old.Calendar = "primary"
+	d.UpsertEvent(old, 1)
+
 	e2 := testEvent("new")
 	e2.Start = time.Date(2026, 4, 15, 10, 0, 0, 0, time.UTC)
 	e2.End = time.Date(2026, 4, 15, 11, 0, 0, 0, time.UTC)
+	e2.Calendar = "primary"
 	d.UpsertEvent(e2, 2)
 
-	deleted, err := d.DeleteStaleSyncGeneration(2)
+	other := testEvent("other-calendar")
+	other.Calendar = "work@company.com"
+	d.UpsertEvent(other, 1)
+
+	deleted, err := d.DeleteStaleSyncGenerationForCalendar("primary", 2)
 	if err != nil {
-		t.Fatalf("DeleteStaleSyncGeneration: %v", err)
+		t.Fatalf("DeleteStaleSyncGenerationForCalendar: %v", err)
 	}
 	if len(deleted) != 1 || deleted[0] != "old" {
 		t.Errorf("expected [old] deleted, got %v", deleted)
@@ -401,6 +409,10 @@ func TestDeleteStaleSyncGeneration(t *testing.T) {
 	got, _ = d.GetEvent("new")
 	if got == nil {
 		t.Error("current gen event should remain")
+	}
+	got, _ = d.GetEvent("other-calendar")
+	if got == nil {
+		t.Error("event from another calendar should remain")
 	}
 }
 
