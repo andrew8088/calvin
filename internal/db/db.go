@@ -268,13 +268,13 @@ func (d *DB) ListEventsOverlapping(start, end time.Time) ([]calendar.Event, erro
 	return events, err
 }
 
-func (d *DB) DeleteStaleSyncGeneration(currentGen int64) ([]string, error) {
+func (d *DB) DeleteStaleSyncGenerationForCalendar(calendarID string, currentGen int64) ([]string, error) {
 	var deleted []string
 	err := d.withConn(context.Background(), func(conn *sqlite.Conn) error {
 		return sqlitex.ExecuteTransient(conn, `
-			SELECT id FROM events WHERE sync_generation < ?
+			SELECT id FROM events WHERE calendar_id = ? AND sync_generation < ?
 		`, &sqlitex.ExecOptions{
-			Args: []any{currentGen},
+			Args: []any{calendarID, currentGen},
 			ResultFunc: func(stmt *sqlite.Stmt) error {
 				deleted = append(deleted, stmt.ColumnText(0))
 				return nil
@@ -286,8 +286,10 @@ func (d *DB) DeleteStaleSyncGeneration(currentGen int64) ([]string, error) {
 	}
 	if len(deleted) > 0 {
 		err = d.withConn(context.Background(), func(conn *sqlite.Conn) error {
-			return sqlitex.ExecuteTransient(conn, `DELETE FROM events WHERE sync_generation < ?`, &sqlitex.ExecOptions{
-				Args: []any{currentGen},
+			return sqlitex.ExecuteTransient(conn, `
+				DELETE FROM events WHERE calendar_id = ? AND sync_generation < ?
+			`, &sqlitex.ExecOptions{
+				Args: []any{calendarID, currentGen},
 			})
 		})
 	}

@@ -35,11 +35,12 @@ func newTestScheduler(t *testing.T) (*Scheduler, *db.DB) {
 func futureEvent(id string, minutesFromNow int) calendar.Event {
 	now := time.Now()
 	return calendar.Event{
-		ID:     id,
-		Title:  "Event " + id,
-		Start:  now.Add(time.Duration(minutesFromNow) * time.Minute),
-		End:    now.Add(time.Duration(minutesFromNow+30) * time.Minute),
-		Status: "confirmed",
+		ID:       id,
+		Title:    "Event " + id,
+		Start:    now.Add(time.Duration(minutesFromNow) * time.Minute),
+		End:      now.Add(time.Duration(minutesFromNow+30) * time.Minute),
+		Calendar: "primary",
+		Status:   "confirmed",
 	}
 }
 
@@ -170,7 +171,9 @@ func TestScheduleFromDB_CleansRemovedEvents(t *testing.T) {
 		t.Fatalf("expected 1 timer")
 	}
 
-	d.DeleteStaleSyncGeneration(2)
+	if _, err := d.DeleteStaleSyncGenerationForCalendar("primary", 2); err != nil {
+		t.Fatalf("DeleteStaleSyncGenerationForCalendar: %v", err)
+	}
 	s.ScheduleFromDB(context.Background())
 
 	if s.TimerCount() != 0 {
