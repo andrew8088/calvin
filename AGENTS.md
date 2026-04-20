@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file defines how coding agents should work in this repository.
+Calvin is a Go CLI for reading Google Calendar events and running local hooks/scripts.
 
 ## Purpose
 
@@ -28,6 +28,42 @@ When in doubt, optimize for maintainability, correctness, and ease of testing.
 - Local storage: **SQLite**
 - External integrations: Google APIs / OAuth2
 - Logging may use lumberjack-backed file rotation where appropriate
+
+## Priorities
+
+- correctness over cleverness
+- minimal, targeted changes
+- strong regression coverage
+- no secret leakage
+- no duplicate hook firing
+- no missed hook execution
+- careful timezone and DST handling
+- safe hook/script execution
+- clear error reporting
+
+## Skill routing
+
+- Use **Deep Review** for repository-wide audits, pre-release reviews, bug hunting, and identifying missing tests or systemic risks.
+- Use **Bug Fix** for a specific reported bug, failing test, or concrete malfunction that needs diagnosis, reproduction, a targeted fix, and validation.
+
+## Calvin-specific skepticism
+Be especially cautious about: - duplicate hook execution
+- missed hook execution
+- recurring event identity bugs
+- all-day event handling
+- DST and timezone edge cases
+- token refresh failures
+- Google API pagination and transient failures
+- SQLite idempotency/state bugs
+- command injection and shell quoting
+- logs that expose calendar details or credentials
+
+## Working norms
+- Reproduce before editing when feasible.
+- Prefer the smallest correct fix.
+- Add regression tests for real bugs when feasible.
+- Avoid broad refactors unless required for correctness.
+- State assumptions and unverified areas explicitly.
 
 ---
 
