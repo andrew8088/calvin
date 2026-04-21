@@ -101,6 +101,46 @@ findings:
       Integration test that launches two FireHooks goroutines for the same
       event/hook/type and asserts exactly one success and one skipped.
 
+  - id: multi-calendar-id-collision
+    type: bug
+    severity: high
+    title: Multi-calendar events are keyed only by event ID
+    location: internal/db/migrations/001_initial.sql:1-18; internal/db/db.go:146-165
+    problem: >
+      Calvin supports watching multiple calendars, but the events table uses
+      id as the sole primary key and ON CONFLICT target. Google only
+      guarantees event IDs are unique per calendar, so two watched calendars
+      can legitimately return the same event ID.
+    impact: >
+      One calendar's event can overwrite another calendar's row, merging hook
+      history and corrupting per-calendar state.
+    fix_direction: >
+      Key events by (calendar_id, id) everywhere storage or lookup depends on
+      identity, and update related hook/state tables and queries to use the
+      composite identity.
+    missing_test: >
+      Store two events with the same ID from different calendars and assert
+      both rows remain addressable with distinct hook execution state.
+
+  - id: long-event-end-hook-lost-on-restart
+    type: bug
+    severity: high
+    title: Restarting during long events drops on-event-end hooks
+    location: internal/scheduler/scheduler.go:41-56
+    problem: >
+      Scheduler recovery only reloads events whose start_time is within the
+      last hour. An event that started earlier but is still in progress is not
+      rescheduled, even if its end time is still in the future.
+    impact: >
+      Restarting Calvin during a long meeting silently loses the eventual
+      on-event-end hook.
+    fix_direction: >
+      Rehydrate overlapping in-progress events during startup and periodic
+      rescheduling, not just recently-started upcoming events.
+    missing_test: >
+      Seed an event that started more than one hour ago but ends in the
+      future, restart the scheduler, and assert its end timer is restored.
+
   - id: drift-drops-hooks
     type: bug
     severity: medium
@@ -218,6 +258,25 @@ findings:
     missing_test: >
       If Discover fails once and succeeds later, timers for unaffected events
       still fire correctly.
+
+  - id: shutdown-does-not-wait-for-hooks
+    type: bug
+    severity: medium
+    title: Daemon shutdown waitgroup never tracks running hooks
+    location: internal/cli/start_cmd.go:149-253
+    problem: >
+      runForeground declares hookWg and waits on it during shutdown, but no
+      code ever increments or decrements the waitgroup when timer-fired hooks
+      run.
+    impact: >
+      SIGTERM/SIGINT can terminate Calvin while hooks are still executing,
+      truncating scripts and leaving execution state inconsistent.
+    fix_direction: >
+      Track in-flight hook executions explicitly from the scheduler/daemon
+      path, or perform coordinated cancellation and waiting before exit.
+    missing_test: >
+      Start a slow hook, trigger shutdown while it is running, and assert
+      Calvin blocks until completion or cancels it deterministically.
 
   - id: cmd-cancel-pgid
     type: bug
