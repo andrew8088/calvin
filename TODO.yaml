@@ -1,0 +1,429 @@
+findings:
+  - id: cancelled-events-dropped
+    type: bug
+    severity: high
+    title: Cancelled events silently dropped during incremental sync
+    location: internal/calendar/sync.go:203-232 (convertEvent); scheduler.go:72-97 (ProcessDiff)
+    problem: >
+      convertEvent returns ok=false when item.Start is nil or has neither
+      DateTime nor Date. Google's incremental sync often returns cancelled
+      events with just {id, status: "cancelled"} and no start. Those events
+      are filtered out before Diff runs, so DiffDeleted is never emitted
+      and the scheduler never cancels the existing timers.
+    impact: >
+      on-event-start / on-event-end / before-event-start hooks keep firing
+      for events the user deleted or declined.
+    fix_direction: >
+      In sync or convertEvent, pass through any item where status=="cancelled"
+      as a DiffDeleted regardless of missing Start/End.
+    missing_test: >
+      Test that a sync response containing {Id:"x", Status:"cancelled"} with
+      no Start yields a DiffDeleted result against a DB event.
+
+  - id: oauth-refresh-not-persisted
+    type: bug
+    severity: high
+    title: Refreshed OAuth tokens are never written back to disk
+    location: internal/auth/auth.go:131-142 (TokenSource)
+    problem: >
+      oc.TokenSource(ctx, token) refreshes tokens in memory only. When Google
+      rotates the refresh token, the new one is not saved to token.json. On
+      daemon restart we reload the stale (possibly revoked) refresh token.
+    impact: >
+      Long-running daemons silently lose auth after a restart with a
+      misleading "token invalid" error. Forces the user to re-run calvin auth.
+    fix_direction: >
+      Wrap the token source so Token() detects rotation (new AccessToken or
+      RefreshToken) and calls saveToken atomically.
+    missing_test: >
+      Fake TokenSource that returns a rotated refresh token; assert token.json
+      is rewritten with the new value.
+
+  - id: oauth-csrf-state
+    type: bug
+    severity: high
+    title: OAuth state parameter is hardcoded and never verified
+    location: internal/auth/auth.go:54-63, 74
+    problem: >
+      AuthCodeURL uses the literal "state". The /callback handler never
+      validates the returned state value.
+    impact: >
+      CSRF on localhost OAuth: an attacker who can get the user to load
+      http://localhost:8085/callback?code=X&state=state while auth is running
+      can bind Calvin to an attacker-controlled Google account.
+    fix_direction: >
+      Generate a crypto/rand nonce, pass it to AuthCodeURL, compare it on
+      callback, reject mismatches.
+    missing_test: >
+      Handler test covering missing state, wrong state, and correct state.
+
+  - id: attendees-json-bad-roundtrip
+    type: bug
+    severity: high
+    title: attendeesJSON/parseAttendees do not round-trip real attendee names
+    location: internal/db/db.go:569-619
+    problem: >
+      attendeesJSON builds JSON with fmt.Sprintf("%q", ...). Go's %q is not
+      JSON (emits \x01, \a, \v, etc.). The hand-rolled parseAttendees treats
+      the first quote after a field as the terminator and ignores backslash
+      escapes, so any attendee name with a quote, backslash, or control char
+      corrupts the stored blob and the subsequent parse.
+    impact: >
+      Attendee data is wrong after round-trip. hashAttendees differs between
+      DB and API-returned events, so every sync marks the event DiffModified,
+      causing timer churn and misleading hook payloads.
+    fix_direction: >
+      Replace both functions with encoding/json.Marshal / json.Unmarshal.
+    missing_test: >
+      Round-trip an Attendee{Name: `Alice "Ace" Smith`} through UpsertEvent
+      and GetEvent; assert equality.
+
+  - id: dedup-race
+    type: bug
+    severity: high
+    title: Hook dedup is not atomic across concurrent FireHooks invocations
+    location: internal/hooks/execute.go:111-189 (executeOne)
+    problem: >
+      HasHookExecuted is checked, the hook runs for up to hook_timeout_seconds,
+      then RecordHookExecution writes the row. Two concurrent firings for the
+      same (eventID, hookName, hookType) both pass the check and both run. The
+      dbmu only serializes individual DB calls, not the read-execute-write
+      window.
+    impact: >
+      Side-effecting hooks (notifications, DND toggles, recording starts) can
+      run twice per transition when sync ticks overlap with AfterFunc-driven
+      fires, or after SIGUSR1 during an active fire.
+    fix_direction: >
+      Atomically reserve a row before running (INSERT OR IGNORE with a partial
+      UNIQUE index on (event_id, hook_name, hook_type) for in-progress rows),
+      or use a keyed in-process mutex keyed on that triple.
+    missing_test: >
+      Integration test that launches two FireHooks goroutines for the same
+      event/hook/type and asserts exactly one success and one skipped.
+
+  - id: drift-drops-hooks
+    type: bug
+    severity: medium
+    title: Stale-timer drift check silently drops hooks after sleep/suspend
+    location: internal/scheduler/scheduler.go:148-152, 99-132
+    problem: >
+      If time.Now() - scheduledTime > 60s, fireHook returns without running.
+      After laptop sleep across an event boundary the timer fires late and is
+      discarded. ScheduleFromDB also won't re-schedule past-start events
+      (event.Start.After(now) is false), so there is no catch-up.
+    impact: >
+      Users who close their laptop silently miss on-event-start /
+      on-event-end hooks.
+    fix_direction: >
+      Treat each sync tick as a catch-up pass: for events whose target instant
+      falls in (lastSync - sync_interval, now] and have no successful prior
+      execution, fire them synchronously subject to dedup.
+    missing_test: >
+      Schedule an event with target time now-120s, no prior execution; assert
+      the hook still fires exactly once.
+
+  - id: event-titles-in-logs
+    type: bug
+    severity: medium
+    title: Calendar event titles are written to log files
+    location: internal/scheduler/scheduler.go:78,80,88,150,165
+    problem: >
+      Scheduler INFO logs include event.Title on sync/new/modified/deleted,
+      stale-timer discard, and hook firing. Titles can contain PII (health,
+      legal, interviews). Logs are persisted and rotated by lumberjack.
+    impact: >
+      Sensitive calendar titles leak to disk and persist across rotations.
+    fix_direction: >
+      Log only event.ID at INFO. Keep titles for TTY banners / user-facing
+      output only. Consider a debug-gated path if title logs are ever needed.
+    missing_test: >
+      Assertion that scheduler log output for sync / diff events does not
+      contain the event title.
+
+  - id: limitedwriter-short-write
+    type: bug
+    severity: medium
+    title: limitedWriter returns short writes, marking noisy hooks as failed
+    location: internal/hooks/execute.go:234-245
+    problem: >
+      In the transition write (remaining > 0 and len(p) > remaining),
+      limitedWriter returns the truncated len(p), not the original. os/exec
+      copies child stdout/stderr via io.Copy, which surfaces short writes as
+      io.ErrShortWrite and makes cmd.Run return an error.
+    impact: >
+      A hook that exceeds hook_output_max_bytes of stdout/stderr but exits 0
+      is reported as failed. Since dedup only records success, the hook will
+      be re-run on subsequent schedules.
+    fix_direction: >
+      Capture the original len(p) before truncation and return it as n in all
+      paths.
+    missing_test: >
+      Integration test: hook that writes hook_output_max_bytes + 1024 bytes
+      to stdout and exits 0; assert result.Status == "success".
+
+  - id: only-success-dedup
+    type: bug
+    severity: medium
+    title: Only success is deduplicated, allowing replay of side-effecting failures
+    location: internal/db/db.go:352-368 (HasHookExecuted)
+    problem: >
+      HasHookExecuted filters WHERE status = 'success'. A hook that caused a
+      side effect but exited non-zero (or timed out after doing the work) is
+      not treated as executed and may run again on restart + reschedule.
+    impact: >
+      Duplicate side effects for hooks that do real work before failing.
+    fix_direction: >
+      Decide deliberately: either dedup on any completed attempt, or introduce
+      an explicit retry policy with a bounded retry count, and only allow retry
+      for statuses that are safe to retry.
+    missing_test: >
+      After a failed execution, restart + reschedule within the scheduling
+      window; assert the hook does not fire a second time by default.
+
+  - id: gone-error-heuristic
+    type: bug
+    severity: medium
+    title: isGoneError is substring-matched and recursive retry is unbounded
+    location: internal/calendar/sync.go:129-134, 312-314
+    problem: >
+      isGoneError uses strings.Contains(err, "410") || "Gone", which matches
+      any error text containing those substrings. On a true result, Sync
+      recurses with the sync token cleared and no retry counter.
+    impact: >
+      False-positive full resyncs waste quota. A persistent misclassified 410
+      could recurse until the ctx deadline.
+    fix_direction: >
+      Type-assert to *googleapi.Error and check Code == 410. Replace recursion
+      with a single retry flag.
+    missing_test: >
+      A fake call returning googleapi.Error{Code:410} triggers exactly one
+      retry; a non-410 error that contains "410" in its text does not retry.
+
+  - id: scheduler-ctx-capture
+    type: bug
+    severity: medium
+    title: AfterFunc callbacks capture the ctx from the call that scheduled them
+    location: internal/scheduler/scheduler.go:99-132
+    problem: >
+      scheduleEvent closures over the ctx argument. Today it is the daemon
+      context, but a future refactor to pass a per-sync child ctx would cause
+      scheduled timers to fire against a cancelled context. Also, fireHook
+      re-discovers hooks and silently skips the fire if Discover fails.
+    impact: >
+      Subtle refactor trap; transient filesystem issues during Discover mean
+      a scheduled hook is silently skipped.
+    fix_direction: >
+      Store the daemon ctx on the Scheduler struct and read it in callbacks.
+      Consider caching discovered hooks with invalidation on filesystem change.
+    missing_test: >
+      If Discover fails once and succeeds later, timers for unaffected events
+      still fire correctly.
+
+  - id: cmd-cancel-pgid
+    type: bug
+    severity: low
+    title: cmd.Cancel kills by cmd.Process.Pid which may be stale by the time WaitDelay fires
+    location: internal/hooks/execute.go:136-138
+    problem: >
+      cmd.Cancel does syscall.Kill(-cmd.Process.Pid, SIGKILL). With WaitDelay,
+      Cancel can run after Wait has reaped the process; cmd.Process is still
+      set, so the negative pid could hit an unrelated process group if PIDs
+      were recycled.
+    impact: >
+      Rare: unrelated processes receive SIGKILL on heavy pid reuse.
+    fix_direction: >
+      Capture the pgid at Start time and kill that value; also nil-check
+      cmd.Process before calling Kill.
+    missing_test: >
+      Race test: Wait returns before Cancel runs; Cancel must be a no-op.
+
+  - id: data-dir-perms
+    type: bug
+    severity: low
+    title: DataDir created by calvin init at 0755 while token save uses 0700
+    location: internal/cli/init_cmd.go:36 vs internal/auth/auth.go:164
+    problem: >
+      calvin init pre-creates DataDir at 0755. saveToken's MkdirAll(dir, 0700)
+      is a no-op on an existing directory. Files inside keep their narrower
+      modes, but the directory remains world-traversable.
+    impact: >
+      On shared systems, other users can list DataDir contents.
+    fix_direction: >
+      Use 0700 for DataDir and StateDir in init_cmd.go; keep 0755 for
+      ConfigDir (holds hook scripts).
+    missing_test: >
+      Post-init mode-bit assertion on DataDir, StateDir, ConfigDir.
+
+  - id: db-pool-size
+    type: bug
+    severity: low
+    title: SQLite pool size of 1 plus extra mutex serializes reads unnecessarily
+    location: internal/db/db.go:39-45
+    problem: >
+      PoolSize: 1 funnels all DB calls through one connection; Executor.dbmu
+      adds a second layer. Under go test -race, TestConcurrentAccessDoesNotCrash
+      already times out in 5s.
+    impact: >
+      Throughput ceiling visible under many events/hooks; test suite is
+      fragile under -race.
+    fix_direction: >
+      Increase pool size so WAL-mode readers can run in parallel; drop
+      Executor.dbmu once dedup is atomically enforced in SQL.
+    missing_test: >
+      Concurrent reader benchmark or stress test that completes comfortably
+      under -race.
+
+  - id: end-parse-swallowed
+    type: bug
+    severity: low
+    title: item.End.DateTime / item.End.Date parse errors are silently ignored
+    location: internal/calendar/sync.go:217, 226
+    problem: >
+      end, _ = time.Parse(...) on error yields zero-value time and is stored.
+      Events with end=0001-01-01 cause on-event-end not to schedule and can
+      cause diff flapping.
+    impact: >
+      Malformed event.End is persisted; end hooks are silently skipped.
+    fix_direction: >
+      Treat an End parse error the same as a Start parse error: drop the event.
+    missing_test: >
+      Fixture with a valid Start and malformed End is dropped by convertEvent.
+
+  - id: oauth-app-verification
+    type: feature
+    title: Complete Google OAuth app verification
+    problem: >
+      Submitted to Google 2026-04-15, waiting on review (1-3 weeks). Until it
+      completes, users hitting the consent screen see the unverified-app
+      warning. calendar.readonly is classified Sensitive (not Restricted), so
+      no CASA audit is required.
+    fix_direction: >
+      Track Google's review response. Update README / install docs once the
+      app is verified. Source: /office-hours learning (google-oauth-test-mode),
+      2026-04-10.
+
+  - id: push-notifications
+    type: feature
+    title: Replace polling with Google Calendar push notifications
+    problem: >
+      Daemon currently polls every sync_interval_seconds (default 60s),
+      adding up-to-60s latency to schedule changes and consuming API quota.
+    fix_direction: >
+      Use calendarList.watch() to subscribe to push notifications. Needs a
+      public webhook endpoint (Cloudflare Tunnel or ngrok are candidates).
+      On push, trigger an immediate incremental sync. Source:
+      /plan-eng-review outside voice, 2026-04-10.
+
+  - id: event-filtering-rules
+    type: feature
+    title: Per-hook match/ignore filter rules in config
+    problem: >
+      Hooks currently have to implement their own jq-style guards to decide
+      whether to act on a given event.
+    fix_direction: >
+      Allow per-hook match and ignore patterns in config (glob on title,
+      calendar, organizer, attendee count). Reuse the matching logic already
+      in internal/hooks/matcher.go.
+
+  - id: on-event-change-hook
+    type: feature
+    title: Add on-event-change hook type
+    problem: >
+      Hooks only fire on start, pre-start, and end transitions. There is no
+      way to react to an event being rescheduled, retitled, or having its
+      attendee list changed.
+    fix_direction: >
+      Add on-event-change to ValidTypes. Fire when Diff yields DiffModified.
+      Pass both old and new payloads so the hook can compute the delta.
+
+  - id: hook-retry-backoff
+    type: feature
+    title: Hook retry with exponential backoff
+    problem: >
+      Failed or timed-out hooks are not retried. A transient error means the
+      user misses the side effect for that transition.
+    fix_direction: >
+      Add hook_max_retries and hook_retry_delay_seconds to config. Re-queue
+      failed/timed-out hooks with exponential backoff. Pairs with the
+      only-success-dedup fix — retry only for statuses that are safe to retry.
+
+  - id: calvin-replay
+    type: feature
+    title: calvin replay <event-id> [hook-type]
+    problem: >
+      calvin test uses mock payloads. There is no way to re-fire hooks for a
+      real past event using its stored payload.
+    fix_direction: >
+      Add a replay subcommand that loads the event from the DB, builds the
+      real payload, and runs the matching hooks. Distinct from calvin test.
+
+  - id: hook-failure-notifications
+    type: feature
+    title: Optional notification channel for hook failures
+    problem: >
+      When a hook fails, there is no out-of-band signal — the user has to
+      inspect logs or hook_executions to notice.
+    fix_direction: >
+      Add a [notifications] config section pointing at a webhook URL or a
+      shell command. Invoke it whenever a hook fails or times out, with the
+      failure payload and enough context to triage.
+
+  - id: per-hook-pre-event-minutes
+    type: feature
+    title: Per-hook override for pre_event_minutes
+    problem: >
+      pre_event_minutes is a single global value. Different hooks reasonably
+      want different lead times (e.g., 1 min for a DND toggle, 15 min for a
+      prep reminder).
+    fix_direction: >
+      Support overrides via a sidecar .toml next to the hook script, or a
+      comment directive at the top (# calvin: pre_event_minutes=15). Fall
+      back to the global value when absent.
+
+  - id: calvin-export
+    type: feature
+    title: calvin export (ics / csv / json)
+    problem: >
+      The local event cache is not easily consumable outside Calvin, which
+      limits using it for time-tracking, billing, or analytics.
+    fix_direction: >
+      Add an export subcommand that serializes the local event cache to
+      .ics, .csv, or .json depending on a --format flag.
+
+  - id: calvin-hooks-validate
+    type: feature
+    title: calvin hooks validate (pre-flight)
+    problem: >
+      Hook scripts often have subtle mistakes (wrong shebang, double-read of
+      stdin, missing jq) that only surface at fire time.
+    fix_direction: >
+      Add a hooks validate subcommand that runs shellcheck, verifies the
+      shebang, detects common mistakes, and confirms the script exits
+      cleanly when given a schema-valid payload on stdin.
+
+  - id: calvin-stats
+    type: feature
+    title: calvin stats aggregation command
+    problem: >
+      Operators have no summary view of hook behavior over time.
+    fix_direction: >
+      Aggregate hook_executions into a dashboard: hooks fired per day,
+      average duration, failure rate, slowest hooks, most active events.
+
+  - id: calvin-week
+    type: feature
+    status: done
+    title: calvin week command (next 7 days)
+    fix_direction: Delivered in 83a7c27.
+
+  - id: calvin-free
+    type: feature
+    status: done
+    title: calvin free command (free/busy gaps)
+    fix_direction: Delivered in 5cad817.
+
+  - id: all-day-event-support
+    type: feature
+    status: done
+    title: Support all-day events in convertEvent
+    fix_direction: Delivered in 11f287b.
