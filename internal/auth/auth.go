@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/andrew8088/calvin/internal/config"
@@ -18,6 +19,9 @@ import (
 var (
 	embeddedClientID     = ""
 	embeddedClientSecret = ""
+	oauthTokenSource     = func(ctx context.Context, oc *oauth2.Config, token *oauth2.Token) oauth2.TokenSource {
+		return oc.TokenSource(ctx, token)
+	}
 )
 
 func oauthConfig(cfg *config.Config) (*oauth2.Config, error) {
@@ -137,8 +141,8 @@ func TokenSource(cfg *config.Config) (oauth2.TokenSource, error) {
 	if err != nil {
 		return nil, err
 	}
-	ts := oc.TokenSource(context.Background(), token)
-	return ts, nil
+	ts := oauthTokenSource(context.Background(), oc, token)
+	return &persistingTokenSource{source: ts, current: cloneToken(token)}, nil
 }
 
 func HasToken() bool {
@@ -169,10 +173,71 @@ func saveToken(token *oauth2.Token) error {
 	if err != nil {
 		return fmt.Errorf("marshaling token: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		return fmt.Errorf("writing token: %w", err)
+
+	tmp, err := os.CreateTemp(dir, "token-*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp token file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing temp token file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp token file: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("replacing token file: %w", err)
 	}
 	return nil
+}
+
+type persistingTokenSource struct {
+	mu      sync.Mutex
+	source  oauth2.TokenSource
+	current *oauth2.Token
+}
+
+func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
+	token, err := p.source.Token()
+	if err != nil {
+		return nil, err
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	updated := cloneToken(token)
+	if updated.RefreshToken == "" && p.current != nil {
+		updated.RefreshToken = p.current.RefreshToken
+	}
+	if !tokensEqual(p.current, updated) {
+		if err := saveToken(updated); err != nil {
+			return nil, err
+		}
+		p.current = cloneToken(updated)
+	}
+	return cloneToken(updated), nil
+}
+
+func cloneToken(token *oauth2.Token) *oauth2.Token {
+	if token == nil {
+		return nil
+	}
+	clone := *token
+	return &clone
+}
+
+func tokensEqual(a, b *oauth2.Token) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.AccessToken == b.AccessToken &&
+		a.TokenType == b.TokenType &&
+		a.RefreshToken == b.RefreshToken &&
+		a.Expiry.Equal(b.Expiry)
 }
 
 func openBrowser(url string) {

@@ -23,6 +23,7 @@ findings:
 
   - id: oauth-refresh-not-persisted
     type: bug
+    status: done
     severity: high
     title: Refreshed OAuth tokens are never written back to disk
     location: internal/auth/auth.go:131-142 (TokenSource)
