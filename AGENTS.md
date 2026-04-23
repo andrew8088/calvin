@@ -64,6 +64,7 @@ Be especially cautious about: - duplicate hook execution
 - Add regression tests for real bugs when feasible.
 - Avoid broad refactors unless required for correctness.
 - State assumptions and unverified areas explicitly.
+- If a task came from the tracker (`TODO.yaml` or equivalent), update the tracker entry when the work is complete before finishing or committing.
 
 ---
 
