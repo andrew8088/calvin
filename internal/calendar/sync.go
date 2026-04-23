@@ -201,6 +201,20 @@ func (s *Syncer) CheckAPIAccess(ctx context.Context) error {
 }
 
 func convertEvent(item *googlecalendar.Event, calendarID string) (Event, bool) {
+	status := "confirmed"
+	if item.Status != "" {
+		status = item.Status
+	}
+
+	if status == "cancelled" && (item.Start == nil || (item.Start.DateTime == "" && item.Start.Date == "")) {
+		return Event{
+			ID:       item.Id,
+			Title:    item.Summary,
+			Calendar: calendarID,
+			Status:   status,
+		}, true
+	}
+
 	if item.Start == nil {
 		return Event{}, false
 	}
@@ -246,11 +260,6 @@ func convertEvent(item *googlecalendar.Event, calendarID string) (Event, bool) {
 	}
 
 	link, provider := extractMeetingLink(item)
-
-	status := "confirmed"
-	if item.Status != "" {
-		status = item.Status
-	}
 
 	return Event{
 		ID:              item.Id,

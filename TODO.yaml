@@ -1,6 +1,7 @@
 findings:
   - id: cancelled-events-dropped
     type: bug
+    status: done
     severity: high
     title: Cancelled events silently dropped during incremental sync
     location: internal/calendar/sync.go:203-232 (convertEvent); scheduler.go:72-97 (ProcessDiff)
@@ -14,8 +15,8 @@ findings:
       on-event-start / on-event-end / before-event-start hooks keep firing
       for events the user deleted or declined.
     fix_direction: >
-      In sync or convertEvent, pass through any item where status=="cancelled"
-      as a DiffDeleted regardless of missing Start/End.
+      Delivered by preserving cancelled incremental-sync tombstones even when
+      Google omits start/end fields, plus regression coverage for that path.
     missing_test: >
       Test that a sync response containing {Id:"x", Status:"cancelled"} with
       no Start yields a DiffDeleted result against a DB event.

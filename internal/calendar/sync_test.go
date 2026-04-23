@@ -287,6 +287,60 @@ func TestSyncPreservesIncrementalQueryAcrossPages(t *testing.T) {
 	}
 }
 
+func TestSyncPreservesCancelledIncrementalEventWithoutStart(t *testing.T) {
+	syncer := NewSyncer(oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "token"}))
+
+	syncer.newService = func(ctx context.Context, _ oauth2.TokenSource) (*googlecalendar.Service, error) {
+		client := &http.Client{
+			Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				query := req.URL.Query()
+				if got := query.Get("syncToken"); got != "stored-sync-token" {
+					t.Errorf("syncToken = %q, want stored-sync-token", got)
+				}
+
+				return jsonResponse(req, `{
+					"items": [
+						{
+							"id": "evt-cancelled",
+							"status": "cancelled"
+						}
+					],
+					"nextSyncToken": "fresh-sync-token"
+				}`), nil
+			}),
+		}
+
+		return googlecalendar.NewService(
+			ctx,
+			option.WithHTTPClient(client),
+			option.WithEndpoint("https://calendar.test/"),
+		)
+	}
+
+	events, nextSyncToken, fullSync, err := syncer.Sync(context.Background(), "work@company.com", "stored-sync-token")
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if fullSync {
+		t.Fatal("expected incremental sync")
+	}
+	if nextSyncToken != "fresh-sync-token" {
+		t.Fatalf("nextSyncToken = %q, want fresh-sync-token", nextSyncToken)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].ID != "evt-cancelled" {
+		t.Fatalf("event ID = %q, want evt-cancelled", events[0].ID)
+	}
+	if events[0].Status != "cancelled" {
+		t.Fatalf("event status = %q, want cancelled", events[0].Status)
+	}
+	if events[0].Calendar != "work@company.com" {
+		t.Fatalf("event calendar = %q, want work@company.com", events[0].Calendar)
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
