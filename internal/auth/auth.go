@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -51,15 +53,20 @@ func RunFlow(cfg *config.Config) error {
 		return err
 	}
 
+	state, err := oauthState()
+	if err != nil {
+		return err
+	}
+
 	codeCh := make(chan string, 1)
 	errCh := make(chan error, 1)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			errCh <- fmt.Errorf("no authorization code received")
-			fmt.Fprint(w, "Error: no authorization code received. Close this tab and try again.")
+		code, err := callbackAuthCode(r, state)
+		if err != nil {
+			errCh <- err
+			fmt.Fprintf(w, "Error: %s. Close this tab and try again.", err)
 			return
 		}
 		codeCh <- code
@@ -75,7 +82,7 @@ func RunFlow(cfg *config.Config) error {
 	go server.Serve(listener)
 	defer server.Close()
 
-	url := oc.AuthCodeURL("state", oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+	url := oc.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
 	fmt.Printf("Opening browser for Google Calendar authorization...\n")
 	fmt.Printf("If your browser doesn't open, visit:\n  %s\n\n", url)
 
@@ -104,6 +111,30 @@ func RunFlow(cfg *config.Config) error {
 
 	fmt.Println("Authenticated! Token saved.")
 	return nil
+}
+
+func oauthState() (string, error) {
+	var buf [32]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", fmt.Errorf("generating OAuth state: %w", err)
+	}
+	return hex.EncodeToString(buf[:]), nil
+}
+
+func callbackAuthCode(r *http.Request, expectedState string) (string, error) {
+	state := r.URL.Query().Get("state")
+	if state == "" {
+		return "", fmt.Errorf("missing OAuth state parameter")
+	}
+	if state != expectedState {
+		return "", fmt.Errorf("invalid OAuth state parameter")
+	}
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		return "", fmt.Errorf("no authorization code received")
+	}
+	return code, nil
 }
 
 func Revoke() error {

@@ -43,6 +43,7 @@ findings:
 
   - id: oauth-csrf-state
     type: bug
+    status: done
     severity: high
     title: OAuth state parameter is hardcoded and never verified
     location: internal/auth/auth.go:54-63, 74
@@ -54,10 +55,9 @@ findings:
       http://localhost:8085/callback?code=X&state=state while auth is running
       can bind Calvin to an attacker-controlled Google account.
     fix_direction: >
-      Generate a crypto/rand nonce, pass it to AuthCodeURL, compare it on
-      callback, reject mismatches.
-    missing_test: >
-      Handler test covering missing state, wrong state, and correct state.
+      Delivered by generating a crypto/rand nonce per auth flow, passing it to
+      AuthCodeURL, validating the callback state before accepting the code,
+      and adding regression coverage for missing, mismatched, and valid state.
 
   - id: attendees-json-bad-roundtrip
     type: bug
